@@ -1,0 +1,35 @@
+services:
+  matkoll:
+    build: .
+    container_name: matkoll
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - matkoll-data:/data
+    env_file:
+      - path: .env
+        required: false
+
+  # Optional local vision model for photo logging. Start it with:
+  #   docker compose --profile ollama up -d
+  # then in Matkoll, set the Ollama address to http://ollama:11434
+  ollama:
+    image: ollama/ollama:latest
+    container_name: matkoll-ollama
+    restart: unless-stopped
+    profiles: ["ollama"]
+    volumes:
+      - ollama-models:/root/.ollama
+    # NVIDIA GPU: uncomment this block (needs the NVIDIA Container Toolkit on the host).
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+volumes:
+  matkoll-data:
+  ollama-models:
