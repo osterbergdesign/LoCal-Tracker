@@ -4,14 +4,14 @@ import sqlite3
 import threading
 
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(os.path.dirname(__file__), "..", "data"))
-DB_PATH = os.path.join(DATA_DIR, "matkoll.db")
+DB_PATH = os.path.join(DATA_DIR, "local-tracker.db")
 
 
 def configure(data_dir: str):
     """Points the database somewhere else (used when running inside Home Assistant)."""
     global DATA_DIR, DB_PATH
     DATA_DIR = data_dir
-    DB_PATH = os.path.join(data_dir, "matkoll.db")
+    DB_PATH = os.path.join(data_dir, "local-tracker.db")
 NUTRIENTS = ("kcal", "protein", "carbs", "fat", "fiber")
 
 _local = threading.local()
@@ -117,12 +117,18 @@ MIGRATIONS = [
     ("recipes", "mealie_id", "TEXT"),
     ("recipes", "mealie_slug", "TEXT"),
     ("plan", "mealie_id", "INTEGER"),
-    ("plan", "origin", "TEXT NOT NULL DEFAULT 'matkoll'"),
+    ("plan", "origin", "TEXT NOT NULL DEFAULT 'local'"),  # 'local' or 'mealie' (where the item was planned)
 ]
 
 
 def init():
     os.makedirs(DATA_DIR, exist_ok=True)
+    # The app used to be called Matkoll; pick up a database saved under the old name.
+    old = os.path.join(DATA_DIR, "matkoll.db")
+    if os.path.exists(old) and not os.path.exists(DB_PATH):
+        for suffix in ("", "-wal", "-shm"):
+            if os.path.exists(old + suffix):
+                os.rename(old + suffix, DB_PATH + suffix)
     c = conn()
     c.executescript(SCHEMA)
     for table, column, decl in MIGRATIONS:
@@ -130,6 +136,7 @@ def init():
         if column not in cols:
             c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
     c.execute("CREATE INDEX IF NOT EXISTS plan_mealie ON plan(mealie_id)")
+    c.execute("UPDATE plan SET origin='local' WHERE origin <> 'mealie' AND origin <> 'local'")
     c.commit()
 
 

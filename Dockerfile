@@ -11,8 +11,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY --from=vendor /v/zxing.min.js ./app/static/vendor/zxing.min.js
-RUN useradd --system --uid 1000 matkoll && mkdir -p /data && chown matkoll /data
-USER matkoll
+RUN useradd --system --uid 1000 local-tracker && mkdir -p /data && chown local-tracker /data
+USER local-tracker
 VOLUME /data
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"

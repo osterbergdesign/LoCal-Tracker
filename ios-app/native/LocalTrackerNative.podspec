@@ -1,7 +1,7 @@
 Pod::Spec.new do |s|
-  s.name = 'MatkollNative'
+  s.name = 'LocalTrackerNative'
   s.version = '1.0.0'
-  s.summary = 'Native barcode scanner and Apple Health sync for the Matkoll iPhone app'
+  s.summary = 'Native barcode scanner and Apple Health sync for the LoCal iPhone app'
   s.license = 'MIT'
   s.homepage = 'https://github.com/osterbergdesign/LoCal-Tracker'
   s.author = 'osterbergdesign'

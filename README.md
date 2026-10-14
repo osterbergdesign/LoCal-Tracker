@@ -4,7 +4,7 @@ A self-hosted meal planner and calorie tracker for a household. Install it in **
 
 - **Barcode scanning** with the phone camera. Products are looked up in Open Food Facts and saved locally, so each barcode is only fetched once. Unknown products can be added from the label and are remembered.
 - **Photo logging.** Snap your plate and a vision model lists what it sees with estimated grams and calories. You check the amounts, swap any item for a matching food from the database, and log it. Works with a local Ollama model, the Claude API, the OpenAI API (or any OpenAI-compatible server), or several at once.
-- **Recipes with kcal per gram.** Add raw ingredients, weigh the finished dish, and Matkoll works out kcal per gram and per 100 g of the cooked food. Recipes can then be logged by the gram like any other food, and used inside other recipes.
+- **Recipes with kcal per gram.** Add raw ingredients, weigh the finished dish, and LoCal works out kcal per gram and per 100 g of the cooked food. Recipes can then be logged by the gram like any other food, and used inside other recipes.
 - **Shared meal plan.** Plan the week for the household; each person logs their own portion with one tap.
 - **Mealie.** Import Mealie recipes with calories worked out from their ingredients, and keep the meal plan in sync both ways.
 - **Recipe links.** Paste a link from ICA, Arla, Köket and most other recipe sites; ingredients are matched to foods and their grams estimated for you to check.
@@ -16,45 +16,45 @@ A self-hosted meal planner and calorie tracker for a household. Install it in **
 
 1. In Home Assistant, open **HACS**, click the **⋮** menu (top right) → **Custom repositories**.
 2. Repository: `https://github.com/osterbergdesign/LoCal-Tracker`, type: **Integration** → **Add**.
-3. Search HACS for **Matkoll**, open it, click **Download**, then restart Home Assistant (**Settings → System → Restart**).
-4. **Settings → Devices & services → Add integration → Matkoll**.
+3. Search HACS for **LoCal**, open it, click **Download**, then restart Home Assistant (**Settings → System → Restart**).
+4. **Settings → Devices & services → Add integration → LoCal**.
 
-**Matkoll** now appears in the sidebar. Everyone with a Home Assistant login gets their own diary and goals automatically; Home Assistant admins can change Matkoll's settings (photo recognition, Mealie) under **You**. The Swedish food database downloads in the background the first time.
+**LoCal** now appears in the sidebar. Everyone with a Home Assistant login gets their own diary and goals automatically; Home Assistant admins can change LoCal's settings (photo recognition, Mealie) under **You**. The Swedish food database downloads in the background the first time.
 
 In the **Home Assistant phone app**, the barcode button opens the app's own scanner. On a computer, scanning works in the browser when Home Assistant is opened over HTTPS (Nabu Casa or your own certificate).
 
-Data is stored in `/config/matkoll/` and is included in Home Assistant backups.
+Data is stored in `/config/local_tracker/` and is included in Home Assistant backups.
 
 ### What Home Assistant gets
 
 | Entity | What it shows |
 | --- | --- |
-| `sensor.matkoll_<name>_calories_eaten` | Calories logged today, per person (also `_calories_left`, `_protein_eaten`, `_carbohydrates_eaten`, `_fat_eaten`) |
-| `sensor.matkoll_planned_breakfast` … `_dinner`, `_snack` | Today's planned meals from the shared plan |
-| `calendar.matkoll_meal_plan` | The whole meal plan, for the calendar panel and dashboards |
+| `sensor.local_<name>_calories_eaten` | Calories logged today, per person (also `_calories_left`, `_protein_eaten`, `_carbohydrates_eaten`, `_fat_eaten`) |
+| `sensor.local_planned_breakfast` … `_dinner`, `_snack` | Today's planned meals from the shared plan |
+| `calendar.local_meal_plan` | The whole meal plan, for the calendar panel and dashboards |
 
 Actions:
 
-- **`matkoll.log_food`**: adds food by name or barcode to someone's diary. Without `person`, it uses whoever ran it.
+- **`local_tracker.log_food`**: adds food by name or barcode to someone's diary. Without `person`, it uses whoever ran it.
   ```yaml
-  action: matkoll.log_food
+  action: local_tracker.log_food
   data:
     food: havregryn
     grams: 80
     meal: breakfast
     person: person.anna
   ```
-- **`matkoll.sync_mealie`**: syncs the meal plan with Mealie now (it also happens every 15 minutes).
+- **`local_tracker.sync_mealie`**: syncs the meal plan with Mealie now (it also happens every 15 minutes).
 
-Example automation idea: a notification at 14:00 if `sensor.matkoll_anna_calories_eaten` is still below 300.
+Example automation idea: a notification at 14:00 if `sensor.local_anna_calories_eaten` is still below 300.
 
 ## Mealie
 
 Under **You → Mealie** (admin), enter Mealie's address and an API token (in Mealie: your user → **API Tokens** → create). Then:
 
-- **Recipes → Import → From Mealie** lists your Mealie recipes. Pick one, check the ingredient matches and grams, and it becomes a Matkoll recipe with kcal per gram.
-- **Recipes → Import → From a link** with **Save in Mealie too** ticked sends the link to Mealie, which reads the page (ICA, Arla, Köket and hundreds more), and then imports it into Matkoll.
-- **Meal plan sync, both ways:** meals planned in Mealie appear in Matkoll's plan (tagged *Mealie*), and meals planned in Matkoll appear in Mealie, as a recipe link when the dish came from Mealie, otherwise as a note. Deleting or moving a meal on one side does the same on the other. Mealie recipes that aren't imported yet show up as one portion using Mealie's own nutrition numbers, if it has any; importing the recipe replaces them with exact values.
+- **Recipes → Import → From Mealie** lists your Mealie recipes. Pick one, check the ingredient matches and grams, and it becomes a LoCal recipe with kcal per gram.
+- **Recipes → Import → From a link** with **Save in Mealie too** ticked sends the link to Mealie, which reads the page (ICA, Arla, Köket and hundreds more), and then imports it into LoCal.
+- **Meal plan sync, both ways:** meals planned in Mealie appear in LoCal's plan (tagged *Mealie*), and meals planned in LoCal appear in Mealie, as a recipe link when the dish came from Mealie, otherwise as a note. Deleting or moving a meal on one side does the same on the other. Mealie recipes that aren't imported yet show up as one portion using Mealie's own nutrition numbers, if it has any; importing the recipe replaces them with exact values.
 
 Ingredient amounts in grams are exact. Amounts in dl, spoons, pieces ("1 gul lök") or packs ("1 burk à 400 g") are converted with typical weights and densities, so check them on the import screen.
 
@@ -76,24 +76,24 @@ Open `http://<server>:8080`, create the first account (it becomes the admin), an
 Paste this into the shell of your Proxmox VE host (node → **Shell**):
 
 ```bash
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/osterbergdesign/LoCal-Tracker/main/lxc/matkoll-lxc.sh)"
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/osterbergdesign/LoCal-Tracker/main/lxc/local-tracker-lxc.sh)"
 ```
 
-It asks a few questions, creates an unprivileged Debian container (12 on Proxmox VE 8, 13 on 9) that starts on boot, and installs Matkoll in it from this repository as a systemd service. No Docker needed.
+It asks a few questions, creates an unprivileged Debian container (12 on Proxmox VE 8, 13 on 9) that starts on boot, and installs LoCal in it from this repository as a systemd service. No Docker needed.
 
 **Updating:** run this on the host, with your container's ID:
 
 ```bash
-pct exec 116 -- matkoll-update
+pct exec 116 -- local-tracker-update
 ```
 
-It backs up the database, pulls the latest code from GitHub, updates Python packages and restarts. Data and settings are kept. (Containers created with the older bundled script don't have `matkoll-update` yet; for those, run `bash -c "$(curl -fsSL https://raw.githubusercontent.com/osterbergdesign/LoCal-Tracker/main/lxc/matkoll-lxc.sh)" -- update 116` once.)
+It backs up the database, pulls the latest code from GitHub, updates Python packages and restarts. Data and settings are kept. (Containers set up while the app was still called Matkoll: run `pct exec 116 -- matkoll-update` once. It moves the install over to the new names, data and settings included, and from then on `local-tracker-update` works.)
 
 Without questions, or with your own settings:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/osterbergdesign/LoCal-Tracker/main/lxc/matkoll-lxc.sh -o matkoll-lxc.sh
-CTID=150 RAM=2048 NET=192.168.1.50/24 GATEWAY=192.168.1.1 bash matkoll-lxc.sh -y
+curl -fsSL https://raw.githubusercontent.com/osterbergdesign/LoCal-Tracker/main/lxc/local-tracker-lxc.sh -o local-tracker-lxc.sh
+CTID=150 RAM=2048 NET=192.168.1.50/24 GATEWAY=192.168.1.1 bash local-tracker-lxc.sh -y
 ```
 
 Settings: `CTID`, `CT_HOSTNAME`, `CORES`, `RAM`, `DISK`, `BRIDGE`, `NET` (`dhcp` or `192.168.1.50/24`), `GATEWAY`, `VLAN`, `STORAGE`, `TEMPLATE_STORAGE`, `PORT`, `OLLAMA=yes`, `OLLAMA_MODEL`, `OLLAMA_URL`, `ROOT_PASSWORD`, `SSH_KEY_FILE`.
@@ -102,13 +102,13 @@ Inside the container:
 
 | What | Where |
 | --- | --- |
-| App | `/opt/matkoll/src` (git checkout), Python venv in `/opt/matkoll/venv` |
-| Settings | `/etc/matkoll/matkoll.env` (then `systemctl restart matkoll`) |
-| Data | `/var/lib/matkoll/matkoll.db` |
-| Backups | daily copies in `/var/lib/matkoll/backups`, last 14 kept; `matkoll-backup` makes one now |
-| Logs | `journalctl -fu matkoll` |
+| App | `/opt/local-tracker/src` (git checkout), Python venv in `/opt/local-tracker/venv` |
+| Settings | `/etc/local-tracker/local-tracker.env` (then `systemctl restart local-tracker`) |
+| Data | `/var/lib/local-tracker/local-tracker.db` |
+| Backups | daily copies in `/var/lib/local-tracker/backups`, last 14 kept; `local-tracker-backup` makes one now |
+| Logs | `journalctl -fu local-tracker` |
 
-For photo recognition the script can point Matkoll at an Ollama server you already run, or install Ollama inside the container (CPU only; it raises RAM to 8 GiB and disk to 20 GiB and downloads the model in the background). A GPU is better used by a separate Ollama VM or container with the GPU passed through.
+For photo recognition the script can point LoCal at an Ollama server you already run, or install Ollama inside the container (CPU only; it raises RAM to 8 GiB and disk to 20 GiB and downloads the model in the background). A GPU is better used by a separate Ollama VM or container with the GPU passed through.
 
 `lxc/install.sh` also works on any Debian or Ubuntu machine or VM, without Proxmox.
 
@@ -122,8 +122,8 @@ Browsers only allow live camera access on HTTPS pages. Over plain HTTP everythin
 Caddy example:
 
 ```
-matkoll.example.com {
-    reverse_proxy matkoll:8080
+local-tracker.example.com {
+    reverse_proxy local-tracker:8080
 }
 ```
 
@@ -139,10 +139,10 @@ Runs on your own hardware; photos never leave the house. A GPU makes it fast (a 
 
 ```bash
 docker compose --profile ollama up -d
-docker exec matkoll-ollama ollama pull qwen2.5vl:7b
+docker exec local-tracker-ollama ollama pull qwen2.5vl:7b
 ```
 
-In Matkoll, under **You → Photo recognition**, set the Ollama address to `http://ollama:11434` and press **List models** to check it's reachable. If Ollama already runs elsewhere on your network, use its address instead (for example `http://192.168.1.20:11434`).
+In LoCal, under **You → Photo recognition**, set the Ollama address to `http://ollama:11434` and press **List models** to check it's reachable. If Ollama already runs elsewhere on your network, use its address instead (for example `http://192.168.1.20:11434`).
 
 Vision models that work: `qwen2.5vl:7b` (good balance, ~6 GB), `qwen2.5vl:3b` (smaller machines), `llama3.2-vision:11b`, `gemma3:12b`. Larger models estimate portions better.
 
@@ -164,11 +164,11 @@ When you edit a recipe, any recipe that uses it as an ingredient is recalculated
 
 ## Backups
 
-Everything lives in one SQLite file in the `matkoll-data` volume. To back it up while the app runs:
+Everything lives in one SQLite file in the `local-tracker-data` volume. To back it up while the app runs:
 
 ```bash
-docker exec matkoll python -c "import sqlite3; s=sqlite3.connect('/data/matkoll.db'); d=sqlite3.connect('/data/backup.db'); s.backup(d)"
-docker cp matkoll:/data/backup.db ./matkoll-backup-$(date +%F).db
+docker exec local-tracker python -c "import sqlite3; s=sqlite3.connect('/data/local-tracker.db'); d=sqlite3.connect('/data/backup.db'); s.backup(d)"
+docker cp local-tracker:/data/backup.db ./local-tracker-backup-$(date +%F).db
 ```
 
 ## Settings by environment variable
@@ -204,12 +204,12 @@ app/ingredients.py  turns "2 dl vetemjöl" into a name and grams
 app/mealie.py       Mealie API client
 app/ai.py           photo estimation via Ollama, Claude or OpenAI
 app/static/         the web app (plain JS, no build step); ha-panel.js + ha.html for Home Assistant
-custom_components/matkoll/   the Home Assistant integration (HACS)
+custom_components/local_tracker/   the Home Assistant integration (HACS)
 lxc/                Proxmox helper script and the installer it runs
 ios-app/            iPhone app (Capacitor): setup screen, native scanner, Apple Health
 ```
 
-The integration carries its own copy of `app/` in `custom_components/matkoll/matkoll_app/`, because HACS only downloads that folder. After changing anything in `app/`, run `./scripts/sync-ha.sh` (CI fails if the copy is out of date).
+The integration carries its own copy of `app/` in `custom_components/local_tracker/core/`, because HACS only downloads that folder. After changing anything in `app/`, run `./scripts/sync-ha.sh` (CI fails if the copy is out of date).
 
 ## Data sources and licences
 

@@ -2,20 +2,20 @@
   "config": {
     "step": {
       "user": {
-        "title": "Matkoll",
-        "description": "Adds Matkoll to the sidebar: a food diary for everyone with a Home Assistant login, a shared meal plan, recipes with calories per gram, barcode scanning in the Home Assistant app, and Mealie sync. Settings live in the Matkoll panel under You."
+        "title": "LoCal",
+        "description": "Adds LoCal to the sidebar: a food diary for everyone with a Home Assistant login, a shared meal plan, recipes with calories per gram, barcode scanning in the Home Assistant app, and Mealie sync. Settings live in the LoCal panel under You."
       }
     },
     "abort": {
-      "single_instance_allowed": "Matkoll is already set up."
+      "single_instance_allowed": "LoCal is already set up."
     }
   },
   "services": {
     "log_food": {
       "name": "Log food",
-      "description": "Adds food to a person's Matkoll diary, found by name or barcode.",
+      "description": "Adds food to a person's LoCal diary, found by name or barcode.",
       "fields": {
-        "food": { "name": "Food", "description": "Name of a food or recipe in Matkoll, or a barcode." },
+        "food": { "name": "Food", "description": "Name of a food or recipe in LoCal, or a barcode." },
         "grams": { "name": "Amount", "description": "How much, in grams." },
         "meal": { "name": "Meal", "description": "Which meal. Defaults to the current time of day." },
         "date": { "name": "Date", "description": "Which day. Defaults to today." },

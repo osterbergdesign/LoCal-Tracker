@@ -4,13 +4,13 @@ import Foundation
 import HealthKit
 import UIKit
 
-/// Native features for the Matkoll iPhone app:
+/// Native features for the LoCal iPhone app:
 ///  - scanBarcode: Apple's camera barcode reader (works without HTTPS, unlike the browser's)
 ///  - healthAvailable / healthRequest / healthSaveDay: write daily nutrition totals to Apple Health
-@objc(MatkollNativePlugin)
-public class MatkollNativePlugin: CAPPlugin, CAPBridgedPlugin {
-    public let identifier = "MatkollNativePlugin"
-    public let jsName = "MatkollNative"
+@objc(LocalTrackerNativePlugin)
+public class LocalTrackerNativePlugin: CAPPlugin, CAPBridgedPlugin {
+    public let identifier = "LocalTrackerNativePlugin"
+    public let jsName = "LocalTrackerNative"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "scanBarcode", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "healthAvailable", returnType: CAPPluginReturnPromise),
@@ -24,7 +24,7 @@ public class MatkollNativePlugin: CAPPlugin, CAPBridgedPlugin {
     /// False when the app was built without the Apple Health entitlement (HEALTH=0),
     /// e.g. for a free Apple ID that can't sign HealthKit.
     private var healthBuiltIn: Bool {
-        (Bundle.main.object(forInfoDictionaryKey: "MatkollHealth") as? Bool ?? false) && HKHealthStore.isHealthDataAvailable()
+        (Bundle.main.object(forInfoDictionaryKey: "LocalTrackerHealth") as? Bool ?? false) && HKHealthStore.isHealthDataAvailable()
     }
 
     // MARK: - Barcode scanning
@@ -56,11 +56,11 @@ public class MatkollNativePlugin: CAPPlugin, CAPBridgedPlugin {
                 if granted {
                     present()
                 } else {
-                    call.reject("Camera access is off. Turn it on in Settings → Matkoll → Camera.", "denied")
+                    call.reject("Camera access is off. Turn it on in Settings → LoCal → Camera.", "denied")
                 }
             }
         default:
-            call.reject("Camera access is off. Turn it on in Settings → Matkoll → Camera.", "denied")
+            call.reject("Camera access is off. Turn it on in Settings → LoCal → Camera.", "denied")
         }
     }
 
@@ -130,7 +130,7 @@ public class MatkollNativePlugin: CAPPlugin, CAPBridgedPlugin {
             guard let value = call.getDouble(key), value >= 0 else { continue }
             guard healthStore.authorizationStatus(for: type) == .sharingAuthorized else { continue }
             let metadata: [String: Any] = [
-                HKMetadataKeySyncIdentifier: "matkoll-\(user)-\(dateString)-\(key)",
+                HKMetadataKeySyncIdentifier: "local-tracker-\(user)-\(dateString)-\(key)",
                 HKMetadataKeySyncVersion: version,
             ]
             samples.append(HKQuantitySample(
@@ -138,7 +138,7 @@ public class MatkollNativePlugin: CAPPlugin, CAPBridgedPlugin {
                 start: start, end: end, metadata: metadata))
         }
         if samples.isEmpty {
-            call.reject("Matkoll isn't allowed to write to Apple Health. Turn it on in the Health app → Sharing → Apps → Matkoll.", "denied")
+            call.reject("LoCal isn't allowed to write to Apple Health. Turn it on in the Health app → Sharing → Apps → LoCal.", "denied")
             return
         }
         healthStore.save(samples) { ok, error in
@@ -175,7 +175,7 @@ final class ScannerViewController: UIViewController, AVCaptureMetadataOutputObje
     var onFinish: ((String?) -> Void)?
 
     private let session = AVCaptureSession()
-    private let sessionQueue = DispatchQueue(label: "matkoll.scanner")
+    private let sessionQueue = DispatchQueue(label: "local-tracker.scanner")
     private var previewLayer: AVCaptureVideoPreviewLayer?
     private var device: AVCaptureDevice?
     private var finished = false

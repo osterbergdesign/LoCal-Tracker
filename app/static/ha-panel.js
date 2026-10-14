@@ -1,10 +1,10 @@
-// Home Assistant sidebar panel for Matkoll.
-// Shows the Matkoll app in a same-origin frame and hands it the `hass` object, so the app can talk to
-// the Matkoll integration over Home Assistant's websocket (as the signed-in HA user) and use the
+// Home Assistant sidebar panel for LoCal.
+// Shows the LoCal app in a same-origin frame and hands it the `hass` object, so the app can talk to
+// the LoCal integration over Home Assistant's websocket (as the signed-in HA user) and use the
 // Home Assistant phone app's barcode scanner.
 const VERSION = new URL(import.meta.url).searchParams.get("v") || "";
 
-class MatkollPanel extends HTMLElement {
+class LoCalPanel extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
@@ -32,14 +32,14 @@ class MatkollPanel extends HTMLElement {
         <button aria-label="Open the Home Assistant menu">
           <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="currentColor" d="M3,6H21V8H3V6M3,11H21V13H3V11M3,16H21V18H3V16Z"/></svg>
         </button>
-        <span>Matkoll</span>
+        <span>LoCal</span>
       </div>
-      <iframe title="Matkoll" allow="camera; clipboard-write"></iframe>`;
+      <iframe title="LoCal" allow="camera; clipboard-write"></iframe>`;
     this._frame = this.shadowRoot.querySelector("iframe");
     this.shadowRoot.querySelector("button").addEventListener("click", () =>
       this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })));
     this._frame.addEventListener("load", () => this._push());
-    this._frame.src = `/matkoll_static/ha.html?ha=1&v=${encodeURIComponent(VERSION)}`;
+    this._frame.src = `/local_tracker_static/ha.html?ha=1&v=${encodeURIComponent(VERSION)}`;
   }
 
   set hass(hass) {
@@ -57,8 +57,8 @@ class MatkollPanel extends HTMLElement {
 
   _push() {
     const win = this._frame?.contentWindow;
-    if (this._hass && win && typeof win.__matkollSetHass === "function") win.__matkollSetHass(this._hass);
+    if (this._hass && win && typeof win.__localTrackerSetHass === "function") win.__localTrackerSetHass(this._hass);
   }
 }
 
-if (!customElements.get("matkoll-panel")) customElements.define("matkoll-panel", MatkollPanel);
+if (!customElements.get("local-tracker-panel")) customElements.define("local-tracker-panel", LoCalPanel);

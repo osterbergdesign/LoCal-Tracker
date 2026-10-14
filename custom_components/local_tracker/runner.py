@@ -1,4 +1,4 @@
-"""Runs the Matkoll app inside Home Assistant.
+"""Runs the LoCal app inside Home Assistant.
 
 The app (the same code as the standalone server) runs on its own thread with its own event loop, so its
 database work never blocks Home Assistant. Requests from the panel arrive over Home Assistant's websocket
@@ -25,7 +25,7 @@ async def asgi_call(app, method: str, path: str, query: str, headers: list[tuple
         "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1", "method": method.upper(),
         "scheme": "http", "path": path, "raw_path": path.encode(), "query_string": query.encode(),
         "root_path": "", "headers": [(k.lower().encode(), v.encode()) for k, v in headers],
-        "client": ("127.0.0.1", 0), "server": ("matkoll.internal", 80),
+        "client": ("127.0.0.1", 0), "server": ("local-tracker.internal", 80),
     }
     state = {"sent": False, "status": 500, "headers": [], "chunks": []}
     never = asyncio.get_running_loop().create_future()
@@ -68,8 +68,8 @@ def _multipart(fields: dict[str, str], files: dict[str, dict]) -> tuple[bytes, s
     return b"".join(parts), f"multipart/form-data; boundary={boundary}"
 
 
-class MatkollRunner:
-    """Owns the Matkoll app thread."""
+class LoCalRunner:
+    """Owns the LoCal app thread."""
 
     def __init__(self, data_dir: str) -> None:
         self.data_dir = data_dir
@@ -83,10 +83,10 @@ class MatkollRunner:
     # -- lifecycle (blocking; call from an executor)
 
     def start(self) -> None:
-        self._thread = threading.Thread(target=self._run, name="matkoll", daemon=True)
+        self._thread = threading.Thread(target=self._run, name="local-tracker", daemon=True)
         self._thread.start()
         if not self._ready.wait(120):
-            raise RuntimeError("Matkoll didn't start within 2 minutes")
+            raise RuntimeError("LoCal didn't start within 2 minutes")
         if self._error:
             raise self._error
 
@@ -95,7 +95,7 @@ class MatkollRunner:
         asyncio.set_event_loop(loop)
         self._loop = loop
         try:
-            from .matkoll_app import db, main  # imported here so HA's event loop never waits on it
+            from .core import db, main  # imported here so HA's event loop never waits on it
 
             db.configure(self.data_dir)
             main.TRUSTED_SECRET = self.secret
@@ -116,7 +116,7 @@ class MatkollRunner:
             try:
                 self.main.shutdown()
             except Exception:  # noqa: BLE001
-                _LOGGER.debug("Matkoll shutdown raised", exc_info=True)
+                _LOGGER.debug("LoCal shutdown raised", exc_info=True)
         if self._loop and self._loop.is_running():
             self._loop.call_soon_threadsafe(self._loop.stop)
         if self._thread:
@@ -127,7 +127,7 @@ class MatkollRunner:
     async def request(self, user: dict[str, Any], method: str, path: str,
                       body: Any = None, form: dict | None = None) -> dict[str, Any]:
         if not self._loop or not self.main:
-            raise RuntimeError("Matkoll isn't running")
+            raise RuntimeError("LoCal isn't running")
         future = asyncio.run_coroutine_threadsafe(self._request(user, method, path, body, form), self._loop)
         return await asyncio.wrap_future(future)
 
@@ -136,8 +136,8 @@ class MatkollRunner:
         if not parts.path.startswith("/api/"):
             return {"status": 404, "json": {"detail": "Not found"}}
         headers = [
-            ("x-matkoll-secret", self.secret),
-            ("x-matkoll-ha-user", json.dumps({"id": user["id"], "name": user["name"], "admin": user["admin"]})),
+            ("x-local-tracker-secret", self.secret),
+            ("x-local-tracker-ha-user", json.dumps({"id": user["id"], "name": user["name"], "admin": user["admin"]})),
         ]
         payload = b""
         if form:
@@ -160,5 +160,5 @@ class MatkollRunner:
 
     def call(self, name: str, *args, **kwargs):
         if not self.main:
-            raise RuntimeError("Matkoll isn't running")
+            raise RuntimeError("LoCal isn't running")
         return getattr(self.main, name)(*args, **kwargs)

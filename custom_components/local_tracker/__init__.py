@@ -1,4 +1,4 @@
-"""Matkoll: household meal planner and calorie tracker, running inside Home Assistant."""
+"""LoCal: household meal planner and calorie tracker, running inside Home Assistant."""
 from __future__ import annotations
 
 import logging
@@ -18,7 +18,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import DOMAIN, MEALS, PANEL_URL, STATIC_URL
-from .runner import MatkollRunner
+from .runner import LoCalRunner
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [Platform.SENSOR, Platform.CALENDAR]
@@ -39,11 +39,11 @@ def _version(hass: HomeAssistant) -> str:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     data_dir = hass.config.path(DOMAIN)
-    runner = MatkollRunner(data_dir)
+    runner = LoCalRunner(data_dir)
     try:
         await hass.async_add_executor_job(runner.start)
     except Exception as err:  # noqa: BLE001
-        raise HomeAssistantError(f"Matkoll couldn't start: {err}") from err
+        raise HomeAssistantError(f"LoCal couldn't start: {err}") from err
 
     async def _update() -> dict[str, Any]:
         return await hass.async_add_executor_job(runner.call, "summary_all")
@@ -73,7 +73,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_register_frontend(hass: HomeAssistant) -> None:
-    static_dir = os.path.join(os.path.dirname(__file__), "matkoll_app", "static")
+    static_dir = os.path.join(os.path.dirname(__file__), "core", "static")
     if not hass.data.get(f"{DOMAIN}_static"):
         # Static routes can't be removed again, so they're registered once per Home Assistant run.
         await hass.http.async_register_static_paths([StaticPathConfig(STATIC_URL, static_dir, False)])
@@ -83,8 +83,8 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     await panel_custom.async_register_panel(
         hass,
         frontend_url_path=PANEL_URL,
-        webcomponent_name="matkoll-panel",
-        sidebar_title="Matkoll",
+        webcomponent_name="local-tracker-panel",
+        sidebar_title="LoCal",
         sidebar_icon="mdi:food-apple",
         module_url=f"{STATIC_URL}/ha-panel.js?v={_version(hass)}",
         embed_iframe=False,
@@ -111,7 +111,7 @@ def _register_websocket(hass: HomeAssistant) -> None:
 
 
 @websocket_api.websocket_command({
-    vol.Required("type"): "matkoll/request",
+    vol.Required("type"): "local_tracker/request",
     vol.Required("method"): vol.In(["GET", "POST", "PUT", "DELETE"]),
     vol.Required("path"): vol.All(str, vol.Match(r"^/api/")),
     vol.Optional("body"): object,
@@ -119,16 +119,16 @@ def _register_websocket(hass: HomeAssistant) -> None:
 })
 @websocket_api.async_response
 async def ws_request(hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict) -> None:
-    """Passes a request from the Matkoll panel to the app, as the signed-in Home Assistant user."""
+    """Passes a request from the LoCal panel to the app, as the signed-in Home Assistant user."""
     data = hass.data.get(DOMAIN)
     if not data:
-        connection.send_error(msg["id"], "not_loaded", "Matkoll isn't running")
+        connection.send_error(msg["id"], "not_loaded", "LoCal isn't running")
         return
     try:
         result = await data["runner"].request(
             _ha_user(connection.user), msg["method"], msg["path"], msg.get("body"), msg.get("form"))
     except Exception as err:  # noqa: BLE001
-        _LOGGER.exception("Matkoll request %s %s failed", msg["method"], msg["path"])
+        _LOGGER.exception("LoCal request %s %s failed", msg["method"], msg["path"])
         connection.send_error(msg["id"], "failed", str(err))
         return
     connection.send_result(msg["id"], result)
@@ -156,7 +156,7 @@ async def _user_for_call(hass: HomeAssistant, call: ServiceCall) -> dict[str, An
 @callback
 def _register_services(hass: HomeAssistant) -> None:
     async def log_food(call: ServiceCall) -> ServiceResponse:
-        runner: MatkollRunner = hass.data[DOMAIN]["runner"]
+        runner: LoCalRunner = hass.data[DOMAIN]["runner"]
         ha_user = await _user_for_call(hass, call)
         day = call.data.get("date")
 
@@ -172,7 +172,7 @@ def _register_services(hass: HomeAssistant) -> None:
         return result if call.return_response else None
 
     async def sync_mealie(call: ServiceCall) -> ServiceResponse:
-        runner: MatkollRunner = hass.data[DOMAIN]["runner"]
+        runner: LoCalRunner = hass.data[DOMAIN]["runner"]
         try:
             status = await hass.async_add_executor_job(
                 lambda: runner.call("mealie_sync", *runner.call("_sync_window")))

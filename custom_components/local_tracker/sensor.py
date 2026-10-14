@@ -31,21 +31,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             if person["id"] in known:
                 continue
             known.add(person["id"])
-            new += [MatkollPersonSensor(coordinator, person, *spec) for spec in PERSON_SENSORS]
+            new += [LoCalPersonSensor(coordinator, person, *spec) for spec in PERSON_SENSORS]
         if new:
             async_add_entities(new)
 
-    async_add_entities([MatkollPlanSensor(coordinator, meal) for meal in MEALS])  # also creates the household device
+    async_add_entities([LoCalPlanSensor(coordinator, meal) for meal in MEALS])  # also creates the household device
     add_new_people()
     entry.async_on_unload(coordinator.async_add_listener(add_new_people))
 
 
 def _household_device() -> DeviceInfo:
-    return DeviceInfo(identifiers={(DOMAIN, "household")}, name="Matkoll", manufacturer="Matkoll",
-                      entry_type=DeviceEntryType.SERVICE, configuration_url="homeassistant://matkoll")
+    return DeviceInfo(identifiers={(DOMAIN, "household")}, name="LoCal", manufacturer="LoCal",
+                      entry_type=DeviceEntryType.SERVICE, configuration_url="homeassistant://local-tracker")
 
 
-class MatkollPersonSensor(CoordinatorEntity, SensorEntity):
+class LoCalPersonSensor(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
     _attr_state_class = SensorStateClass.MEASUREMENT
 
@@ -58,8 +58,8 @@ class MatkollPersonSensor(CoordinatorEntity, SensorEntity):
         self._attr_icon = icon
         self._attr_unique_id = f"{DOMAIN}_user{person['id']}_{key}"
         self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"user{person['id']}")}, name=f"Matkoll {person['username']}",
-            manufacturer="Matkoll", model="Food diary", entry_type=DeviceEntryType.SERVICE,
+            identifiers={(DOMAIN, f"user{person['id']}")}, name=f"LoCal {person['username']}",
+            manufacturer="LoCal", model="Food diary", entry_type=DeviceEntryType.SERVICE,
             via_device=(DOMAIN, "household"))
 
     def _person(self) -> dict | None:
@@ -87,7 +87,7 @@ class MatkollPersonSensor(CoordinatorEntity, SensorEntity):
         return {"goal": p.get(goal_key), "date": self.coordinator.data.get("date"), "entries_today": p.get("entries")}
 
 
-class MatkollPlanSensor(CoordinatorEntity, SensorEntity):
+class LoCalPlanSensor(CoordinatorEntity, SensorEntity):
     """Today's planned breakfast/lunch/dinner/snack from the shared meal plan."""
 
     _attr_has_entity_name = True

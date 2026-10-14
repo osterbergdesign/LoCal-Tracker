@@ -3,8 +3,8 @@
 # Run after changing anything in app/ (CI checks that the copy is up to date).
 set -euo pipefail
 cd "$(dirname "$0")/.."
-DEST=custom_components/matkoll/matkoll_app
-VERSION="$(python3 -c "import json;print(json.load(open('custom_components/matkoll/manifest.json'))['version'])")"
+DEST=custom_components/local_tracker/core
+VERSION="$(python3 -c "import json;print(json.load(open('custom_components/local_tracker/manifest.json'))['version'])")"
 rm -rf "$DEST"
 mkdir -p "$DEST"
 tar -C app --exclude='__pycache__' --exclude='*.pyc' --exclude='static/vendor' -cf - . | tar -C "$DEST" -xf -

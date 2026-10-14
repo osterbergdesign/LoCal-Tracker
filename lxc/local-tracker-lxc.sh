@@ -1,30 +1,30 @@
 #!/usr/bin/env bash
-# Matkoll — Proxmox VE helper script
+# LoCal — Proxmox VE helper script
 #
 # Run on the Proxmox host as root:
-#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/osterbergdesign/LoCal-Tracker/main/lxc/matkoll-lxc.sh)"
+#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/osterbergdesign/LoCal-Tracker/main/lxc/local-tracker-lxc.sh)"
 #
 # Or with a saved copy:
-#   bash matkoll-lxc.sh              create a new container (asks a few questions)
-#   bash matkoll-lxc.sh -y           create one with the defaults, no questions
-#   bash matkoll-lxc.sh update 123   update Matkoll in container 123 from GitHub, keeping its data
+#   bash local-tracker-lxc.sh              create a new container (asks a few questions)
+#   bash local-tracker-lxc.sh -y           create one with the defaults, no questions
+#   bash local-tracker-lxc.sh update 123   update LoCal in container 123 from GitHub, keeping its data
 #
 # Settings can also be given as environment variables, for example:
-#   CTID=150 RAM=2048 NET=192.168.1.50/24 GATEWAY=192.168.1.1 bash matkoll-lxc.sh -y
+#   CTID=150 RAM=2048 NET=192.168.1.50/24 GATEWAY=192.168.1.1 bash local-tracker-lxc.sh -y
 #
 # The container gets its code from GitHub and keeps it up to date with
-# `matkoll-update` (run inside it) or `bash matkoll-lxc.sh update <id>` on the host.
+# `local-tracker-update` (run inside it) or `bash local-tracker-lxc.sh update <id>` on the host.
 
 set -Eeuo pipefail
 
-APP="Matkoll"
+APP="LoCal"
 REPO="${REPO:-https://github.com/osterbergdesign/LoCal-Tracker}"
 BRANCH="${BRANCH:-main}"
 RAW="${REPO/github.com/raw.githubusercontent.com}/$BRANCH"
 
 # ---------------------------------------------------------------- defaults (override with env vars)
 CTID="${CTID:-}"
-CT_HOSTNAME="${CT_HOSTNAME:-matkoll}"
+CT_HOSTNAME="${CT_HOSTNAME:-local-tracker}"
 CORES="${CORES:-2}"
 RAM="${RAM:-1024}"            # MiB
 DISK="${DISK:-4}"             # GiB
@@ -57,11 +57,11 @@ trap 'die "Stopped at line $LINENO: $BASH_COMMAND"' ERR
 header() {
   cat <<EOF
 ${BD}${BL}
-   __  __       _   _          _ _
-  |  \/  | __ _| |_| | _____  | | |
-  | |\/| |/ _\` | __| |/ / _ \ | | |
-  | |  | | (_| | |_|   < (_) || | |
-  |_|  |_|\__,_|\__|_|\_\___/ |_|_|
+   _          ____      _
+  | |    ___ / ___|__ _| |
+  | |   / _ \\ |   / _\` | |
+  | |__| (_) | |__| (_| | |
+  |_____\\___/ \\____\\__,_|_|
 ${CL}  Household meal planner and calorie tracker
 
 EOF
@@ -83,7 +83,7 @@ run_installer() {
   pct exec "$ctid" -- env LANG=C.UTF-8 LC_ALL=C.UTF-8 \
     PORT="$PORT" OLLAMA="$OLLAMA" OLLAMA_MODEL="$OLLAMA_MODEL" OLLAMA_URL="$OLLAMA_URL" \
     REPO="$REPO" BRANCH="$BRANCH" \
-    bash -c "curl -fsSL '$RAW/lxc/install.sh' -o /tmp/matkoll-install.sh && bash /tmp/matkoll-install.sh; rc=\$?; rm -f /tmp/matkoll-install.sh; exit \$rc"
+    bash -c "curl -fsSL '$RAW/lxc/install.sh' -o /tmp/local-tracker-install.sh && bash /tmp/local-tracker-install.sh; rc=\$?; rm -f /tmp/local-tracker-install.sh; exit \$rc"
 }
 
 # ---------------------------------------------------------------- questions
@@ -91,7 +91,7 @@ YES=0
 ask() { # ask <var> <title> <prompt>  — keeps the current value as default
   local var="$1" title="$2" prompt="$3" val
   [[ $YES -eq 1 ]] && return 0
-  val=$(whiptail --backtitle "Matkoll LXC" --title "$title" --inputbox "$prompt" 10 64 "${!var}" 3>&1 1>&2 2>&3) || die "Cancelled."
+  val=$(whiptail --backtitle "LoCal LXC" --title "$title" --inputbox "$prompt" 10 64 "${!var}" 3>&1 1>&2 2>&3) || die "Cancelled."
   printf -v "$var" '%s' "$val"
 }
 
@@ -108,7 +108,7 @@ pick_storage() { # pick_storage <content> <var> <title>
     printf -v "$var" '%s' "${list[0]}"
   else
     local choice
-    choice=$(whiptail --backtitle "Matkoll LXC" --title "$title" --menu "Where should it go?" 16 64 6 "${list[@]}" 3>&1 1>&2 2>&3) || die "Cancelled."
+    choice=$(whiptail --backtitle "LoCal LXC" --title "$title" --menu "Where should it go?" 16 64 6 "${list[@]}" 3>&1 1>&2 2>&3) || die "Cancelled."
     printf -v "$var" '%s' "$choice"
   fi
 }
@@ -117,8 +117,8 @@ questions() {
   [[ -n "$CTID" ]] || CTID="$(pvesh get /cluster/nextid)"
   if [[ $YES -eq 0 ]]; then
     command -v whiptail >/dev/null || die "whiptail is missing. Run with -y to use the defaults."
-    if whiptail --backtitle "Matkoll LXC" --title "$APP" --yesno \
-      "Create a new Matkoll container with these settings?\n\n  ID ${CTID} · ${CORES} cores · ${RAM} MiB RAM · ${DISK} GiB disk\n  Network: ${NET} on ${BRIDGE}\n  Port ${PORT}\n\nChoose No to change them." 15 64; then
+    if whiptail --backtitle "LoCal LXC" --title "$APP" --yesno \
+      "Create a new LoCal container with these settings?\n\n  ID ${CTID} · ${CORES} cores · ${RAM} MiB RAM · ${DISK} GiB disk\n  Network: ${NET} on ${BRIDGE}\n  Port ${PORT}\n\nChoose No to change them." 15 64; then
       YES=1
     fi
   fi
@@ -133,10 +133,10 @@ questions() {
     ask GATEWAY "Network" "Gateway, for example 192.168.1.1"
   fi
   ask VLAN "Network" "VLAN tag (empty for none)"
-  ask PORT "Port" "Port Matkoll listens on"
+  ask PORT "Port" "Port LoCal listens on"
   if [[ $YES -eq 0 ]]; then
     local choice
-    choice=$(whiptail --backtitle "Matkoll LXC" --title "Photo recognition" --menu \
+    choice=$(whiptail --backtitle "LoCal LXC" --title "Photo recognition" --menu \
       "Photos can be recognised by a vision model. Cloud API keys (Claude, OpenAI) can be added later in the app." 17 74 3 \
       "later"    "Set it up later in the app" \
       "existing" "Use an Ollama server I already run" \
@@ -193,7 +193,7 @@ create_container() {
     --hostname "$CT_HOSTNAME" --cores "$CORES" --memory "$RAM" --swap 512
     --rootfs "$STORAGE:$DISK" --net0 "$net" --ostype debian
     --unprivileged "$UNPRIVILEGED" --features nesting=1 --onboot 1
-    --timezone host --tags "matkoll" --description "Matkoll — http://<ip>:${PORT}"
+    --timezone host --tags "local-tracker" --description "LoCal — http://<ip>:${PORT}"
   )
   if [[ -n "$ROOT_PASSWORD" ]]; then args+=(--password "$ROOT_PASSWORD"); fi
   if [[ -n "$SSH_KEY_FILE" ]]; then args+=(--ssh-public-keys "$SSH_KEY_FILE"); fi
@@ -221,33 +221,33 @@ cmd_create() {
   questions
   get_template
   create_container
-  msg "Installing Matkoll (takes a minute or two)"
+  msg "Installing LoCal (takes a minute or two)"
   run_installer "$CTID"
   local ip; ip="$(container_ip "$CTID")"
-  pct set "$CTID" --description "Matkoll — http://${ip:-<ip>}:${PORT}" >/dev/null 2>&1 || true
+  pct set "$CTID" --description "LoCal — http://${ip:-<ip>}:${PORT}" >/dev/null 2>&1 || true
   echo
-  ok "${BD}Matkoll is ready at http://${ip:-<container-ip>}:${PORT}${CL}"
+  ok "${BD}LoCal is ready at http://${ip:-<container-ip>}:${PORT}${CL}"
   cat <<EOF
 
   1. Open that address and create the first account. It becomes the admin.
   2. The Swedish food database downloads in the background on first start.
   3. The live barcode scanner needs HTTPS. The quickest way is Tailscale inside
      the container, or point your reverse proxy at ${ip:-<container-ip>}:${PORT}.
-     Then set SECURE_COOKIE=1 in /etc/matkoll/matkoll.env.
+     Then set SECURE_COOKIE=1 in /etc/local-tracker/local-tracker.env.
 EOF
   if [[ "$OLLAMA" == "yes" ]]; then
     cat <<EOF
   4. The vision model is downloading inside the container. Follow it with:
-       pct exec $CTID -- journalctl -fu matkoll-model-pull
+       pct exec $CTID -- journalctl -fu local-tracker-model-pull
      Photo logging works once it finishes.
 EOF
   fi
   cat <<EOF
 
-  Update later:  pct exec $CTID -- matkoll-update
-  Settings:      pct exec $CTID -- nano /etc/matkoll/matkoll.env
-  Logs:          pct exec $CTID -- journalctl -fu matkoll
-  Backups:       daily database copies in /var/lib/matkoll/backups inside the container
+  Update later:  pct exec $CTID -- local-tracker-update
+  Settings:      pct exec $CTID -- nano /etc/local-tracker/local-tracker.env
+  Logs:          pct exec $CTID -- journalctl -fu local-tracker
+  Backups:       daily database copies in /var/lib/local-tracker/backups inside the container
 
 EOF
 }
@@ -256,11 +256,13 @@ cmd_update() {
   header
   check_host
   local ctid="${1:-}"
-  [[ "$ctid" =~ ^[0-9]+$ ]] || die "Usage: bash matkoll-lxc.sh update <container id>"
+  [[ "$ctid" =~ ^[0-9]+$ ]] || die "Usage: bash local-tracker-lxc.sh update <container id>"
   pct status "$ctid" >/dev/null 2>&1 || die "Container $ctid doesn't exist."
   if ! pct status "$ctid" | grep -q running; then pct start "$ctid"; sleep 3; fi
-  pct exec "$ctid" -- test -f /etc/systemd/system/matkoll.service || die "Container $ctid doesn't have Matkoll installed."
-  msg "Updating Matkoll in container $ctid from $REPO ($BRANCH)"
+  # matkoll.service: installs from before the app was renamed; the installer moves them over.
+  pct exec "$ctid" -- sh -c 'test -f /etc/systemd/system/local-tracker.service || test -f /etc/systemd/system/matkoll.service' \
+    || die "Container $ctid doesn't have LoCal installed."
+  msg "Updating LoCal in container $ctid from $REPO ($BRANCH)"
   # Works for both GitHub-based installs and older bundled ones (it converts those).
   OLLAMA="no"
   run_installer "$ctid"
@@ -270,7 +272,7 @@ main() {
   case "${1:-}" in
     update) shift; cmd_update "$@" ;;
     -y|--yes) YES=1; cmd_create ;;
-    -h|--help) echo "Usage: bash matkoll-lxc.sh [-y | update <container id>]" ;;
+    -h|--help) echo "Usage: bash local-tracker-lxc.sh [-y | update <container id>]" ;;
     "") cmd_create ;;
     *) die "Unknown option: $1 (try --help)" ;;
   esac

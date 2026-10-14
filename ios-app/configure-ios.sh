@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Applies Matkoll's settings to the Xcode project that `npx cap add ios` generates:
+# Applies LoCal's settings to the Xcode project that `npx cap add ios` generates:
 # permission texts, Apple Health entitlement, network access, icon, splash and build number.
 # Safe to run again; npm run ios:sync runs it for you.
 set -euo pipefail
@@ -17,12 +17,12 @@ say() { echo " • $*"; }
 
 say "Permission texts and network access"
 set_text() { plutil -replace "$1" -string "$2" "$PLIST"; }
-set_text CFBundleDisplayName "Matkoll"
-set_text NSCameraUsageDescription "Matkoll uses the camera to scan barcodes and to photograph meals."
-set_text NSPhotoLibraryUsageDescription "Matkoll lets you pick a meal photo from your library to estimate its calories."
-set_text NSHealthShareUsageDescription "Matkoll can save your logged calories and macros to Apple Health."
-set_text NSHealthUpdateUsageDescription "Matkoll saves your logged calories, protein, carbohydrates, fat and fibre to Apple Health."
-set_text NSLocalNetworkUsageDescription "Matkoll connects to your own Matkoll server on your home network."
+set_text CFBundleDisplayName "LoCal"
+set_text NSCameraUsageDescription "LoCal uses the camera to scan barcodes and to photograph meals."
+set_text NSPhotoLibraryUsageDescription "LoCal lets you pick a meal photo from your library to estimate its calories."
+set_text NSHealthShareUsageDescription "LoCal can save your logged calories and macros to Apple Health."
+set_text NSHealthUpdateUsageDescription "LoCal saves your logged calories, protein, carbohydrates, fat and fibre to Apple Health."
+set_text NSLocalNetworkUsageDescription "LoCal connects to your own LoCal server on your home network."
 # Your server is usually plain http:// on the home network, which iOS blocks unless allowed.
 plutil -replace NSAppTransportSecurity -json '{"NSAllowsArbitraryLoads":true,"NSAllowsLocalNetworking":true}' "$PLIST"
 
@@ -30,10 +30,10 @@ if [[ "${HEALTH:-1}" == "0" ]]; then
   say "Apple Health turned off (HEALTH=0)"
   rm -f "$ENT"
   perl -0pi -e 's/\n\t+CODE_SIGN_ENTITLEMENTS = App\/App\.entitlements;//g' "$PBX"
-  plutil -replace MatkollHealth -bool false "$PLIST"
+  plutil -replace LocalTrackerHealth -bool false "$PLIST"
 else
 say "Apple Health entitlement"
-plutil -replace MatkollHealth -bool true "$PLIST"
+plutil -replace LocalTrackerHealth -bool true "$PLIST"
 cat >"$ENT" <<'XML'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

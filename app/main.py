@@ -21,7 +21,7 @@ from . import ai, db, ingredients, mealie, sources
 
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 MEALS = ("breakfast", "lunch", "dinner", "snack")
-COOKIE = "matkoll_session"
+COOKIE = "local_tracker_session"
 SECURE_COOKIE = os.environ.get("SECURE_COOKIE", "0") == "1"
 
 
@@ -42,16 +42,16 @@ def check_pw(pw: str, stored: str) -> bool:
         return False
 
 
-# When Matkoll runs inside Home Assistant, the integration calls it in-process and says who the HA user is.
+# When LoCal runs inside Home Assistant, the integration calls it in-process and says who the HA user is.
 # The secret is generated per start and never leaves the HA process, so the header can't be forged from outside.
 TRUSTED_SECRET: str | None = None
 
 
 def ha_user(request: Request):
-    if not TRUSTED_SECRET or not hmac.compare_digest(request.headers.get("x-matkoll-secret", ""), TRUSTED_SECRET):
+    if not TRUSTED_SECRET or not hmac.compare_digest(request.headers.get("x-local-tracker-secret", ""), TRUSTED_SECRET):
         return None
     try:
-        info = json.loads(request.headers.get("x-matkoll-ha-user", ""))
+        info = json.loads(request.headers.get("x-local-tracker-ha-user", ""))
         ha_id, name, admin = str(info["id"]), str(info.get("name") or "Home Assistant user"), bool(info.get("admin"))
     except (ValueError, KeyError, TypeError):
         raise HTTPException(401, "Unknown Home Assistant user")
@@ -59,7 +59,7 @@ def ha_user(request: Request):
 
 
 def ensure_ha_user(ha_id: str, name: str, admin: bool):
-    """The Matkoll account for a Home Assistant user, created on first use."""
+    """The LoCal account for a Home Assistant user, created on first use."""
     u = db.q1("SELECT * FROM users WHERE ha_user_id=?", (ha_id,))
     if not u:
         base, n, username = name[:40], 1, name[:40]
@@ -642,7 +642,7 @@ async def plan_create(request: Request):
     u = current_user(request)
     d = await body(request)
     food_exists(d.get("food_id"))
-    pid = db.run("INSERT INTO plan (date, meal, food_id, grams, note, created_by) VALUES (?,?,?,?,?,?)",
+    pid = db.run("INSERT INTO plan (date, meal, food_id, grams, note, created_by, origin) VALUES (?,?,?,?,?,?,'local')",
                  (valid_date(d.get("date")), valid_meal(d.get("meal")), d["food_id"],
                   num(d.get("grams"), "Amount", 0.1), (d.get("note") or "")[:200], u["id"]))
     in_background(mealie_push_item, pid)
@@ -717,7 +717,7 @@ def _sync_on():
 
 
 def mealie_push_item(plan_id):
-    """Sends one Matkoll plan item to Mealie, as a recipe link when the dish came from Mealie."""
+    """Sends one LoCal plan item to Mealie, as a recipe link when the dish came from Mealie."""
     if not _sync_on():
         return
     p = db.q1("SELECT p.*, f.name, f.source, f.source_id FROM plan p JOIN foods f ON f.id = p.food_id WHERE p.id=?",
@@ -739,7 +739,7 @@ def mealie_push_item(plan_id):
 
 def mealie_repush_item(plan_id, old_mealie_id):
     mealie_delete_entry(old_mealie_id)
-    db.run("UPDATE plan SET mealie_id=NULL, origin='matkoll' WHERE id=?", (plan_id,))
+    db.run("UPDATE plan SET mealie_id=NULL, origin='local' WHERE id=?", (plan_id,))
     mealie_push_item(plan_id)
 
 
@@ -772,7 +772,7 @@ def _mealie_entry_food(entry):
                 nutrition = mealie.nutrition_per_serving(mealie.get_recipe(slug))
             except mealie.MealieError:
                 pass
-        # Not imported into Matkoll yet: one Mealie portion stands in as "100 g", using Mealie's own
+        # Not imported into LoCal yet: one Mealie portion stands in as "100 g", using Mealie's own
         # nutrition per serving when it has any. Importing the recipe gives exact numbers.
         fid = db.upsert_food({
             "name": f"{name} (1 portion)", "brand": "Mealie – import for exact calories",
@@ -787,7 +787,7 @@ def _mealie_entry_food(entry):
 
 
 def mealie_sync(start: str, end: str):
-    """Pulls Mealie's plan into Matkoll's, removes what was deleted there, then pushes Matkoll-only items."""
+    """Pulls Mealie's plan into LoCal's, removes what was deleted there, then pushes LoCal-only items."""
     if not mealie.configured():
         raise mealie.MealieError("Mealie isn't connected.")
     with _sync_lock:
@@ -819,7 +819,7 @@ def mealie_sync(start: str, end: str):
                     db.run("DELETE FROM plan WHERE id=?", (r["id"],))
                     removed += 1
             if mealie.config()["sync"]:
-                for r in db.q("SELECT id FROM plan WHERE mealie_id IS NULL AND origin='matkoll' "
+                for r in db.q("SELECT id FROM plan WHERE mealie_id IS NULL AND origin <> 'mealie' "
                               "AND date BETWEEN ? AND ?", (start, end)):
                     mealie_push_item(r["id"])
                     pushed += 1
@@ -974,7 +974,7 @@ async def import_url(request: Request):
     def fetch():
         import requests
         r = requests.get(url, timeout=20, headers={
-            "User-Agent": "Mozilla/5.0 (compatible; Matkoll/1.0; recipe import)",
+            "User-Agent": "Mozilla/5.0 (compatible; LoCal/1.0; recipe import)",
             "Accept-Language": "sv-SE,sv;q=0.9,en;q=0.8"})
         r.raise_for_status()
         return r.text
@@ -1140,7 +1140,7 @@ async def export_csv(request: Request):
     w.writeheader()
     w.writerows(rows)
     return Response(buf.getvalue(), media_type="text/csv",
-                    headers={"Content-Disposition": f'attachment; filename="matkoll-{u["username"]}.csv"'})
+                    headers={"Content-Disposition": f'attachment; filename="local-tracker-{u["username"]}.csv"'})
 
 
 # ---------------------------------------------------------------- used by the Home Assistant integration
@@ -1239,7 +1239,7 @@ def startup():
     if os.environ.get("AUTO_IMPORT_SLV", "1") == "1" and not db.get_setting("slv_imported"):
         sources.start_slv_import()
     _stop.clear()
-    threading.Thread(target=_sync_loop, daemon=True, name="matkoll-mealie-sync").start()
+    threading.Thread(target=_sync_loop, daemon=True, name="local-tracker-mealie-sync").start()
 
 
 def shutdown():

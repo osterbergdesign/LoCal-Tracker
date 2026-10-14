@@ -1,10 +1,10 @@
 {
-  "name": "matkoll-native",
+  "name": "local-tracker-native",
   "version": "1.0.0",
-  "description": "Native barcode scanner and Apple Health sync for the Matkoll iPhone app",
+  "description": "Native barcode scanner and Apple Health sync for the LoCal iPhone app",
   "main": "index.js",
   "license": "MIT",
-  "files": ["index.js", "ios/Sources", "Package.swift", "MatkollNative.podspec"],
+  "files": ["index.js", "ios/Sources", "Package.swift", "LocalTrackerNative.podspec"],
   "capacitor": {
     "ios": {
       "src": "ios"

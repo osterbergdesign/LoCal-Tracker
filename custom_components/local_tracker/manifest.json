@@ -1,6 +1,6 @@
 {
-  "domain": "matkoll",
-  "name": "Matkoll",
+  "domain": "local-tracker",
+  "name": "LoCal",
   "codeowners": ["@osterbergdesign"],
   "config_flow": true,
   "dependencies": ["http", "frontend", "panel_custom", "websocket_api"],

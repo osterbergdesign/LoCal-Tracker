@@ -1,6 +1,6 @@
 {
-  "name": "Matkoll",
-  "short_name": "Matkoll",
+  "name": "LoCal",
+  "short_name": "LoCal",
   "description": "Household meal planner and calorie tracker",
   "start_url": "/",
   "scope": "/",

@@ -1,6 +1,6 @@
 {
-  "appId": "se.osterbergdesign.matkoll",
-  "appName": "Matkoll",
+  "appId": "se.osterbergdesign.localtracker",
+  "appName": "LoCal",
   "webDir": "www",
   "server": {
     "allowNavigation": ["*"],

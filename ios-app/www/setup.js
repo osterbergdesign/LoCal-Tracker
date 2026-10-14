@@ -1,7 +1,7 @@
-// First-launch setup: remembers the Matkoll server address and opens it.
-// The web app itself is served by your Matkoll server, so it updates with `matkoll-update`.
+// First-launch setup: remembers the LoCal server address and opens it.
+// The web app itself is served by your LoCal server, so it updates with `local-tracker-update`.
 (function () {
-  const KEY = "matkoll.server";
+  const KEY = "local-tracker.server";
   const params = new URLSearchParams(location.search);
   let saved = "";
   try { saved = localStorage.getItem(KEY) || ""; } catch (e) { /* storage unavailable */ }

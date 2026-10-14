@@ -15,7 +15,7 @@ from .sensor import _household_device
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
-    async_add_entities([MatkollPlanCalendar(hass.data[DOMAIN]["coordinator"], hass.data[DOMAIN]["runner"])])
+    async_add_entities([LoCalPlanCalendar(hass.data[DOMAIN]["coordinator"], hass.data[DOMAIN]["runner"])])
 
 
 def _event(item: dict) -> CalendarEvent:
@@ -27,10 +27,10 @@ def _event(item: dict) -> CalendarEvent:
         details += f"\n{item['note']}"
     return CalendarEvent(start=start, end=start + timedelta(minutes=length),
                          summary=f"{MEAL_LABELS[item['meal']]}: {item['name']}", description=details,
-                         uid=f"matkoll-plan-{item['id']}")
+                         uid=f"local-tracker-plan-{item['id']}")
 
 
-class MatkollPlanCalendar(CoordinatorEntity, CalendarEntity):
+class LoCalPlanCalendar(CoordinatorEntity, CalendarEntity):
     _attr_has_entity_name = True
     _attr_name = "Meal plan"
     _attr_icon = "mdi:calendar-heart"

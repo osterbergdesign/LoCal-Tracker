@@ -1,5 +1,5 @@
 // Caches the app shell so it opens instantly; API calls always go to the server.
-const CACHE = "matkoll-v2";
+const CACHE = "local-tracker-v2";
 const SHELL = ["/", "/static/app.css", "/static/app.js", "/static/icon.svg", "/static/manifest.webmanifest"];
 
 self.addEventListener("install", (e) => {

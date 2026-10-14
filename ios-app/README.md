@@ -1,6 +1,6 @@
-# Matkoll for iPhone
+# LoCal for iPhone
 
-A native iPhone app around your Matkoll server. The screens come from the server, so they update whenever you run `matkoll-update`; the app adds what a web page can't do:
+A native iPhone app around your LoCal server. The screens come from the server, so they update whenever you run `local-tracker-update`; the app adds what a web page can't do:
 
 - **Apple's barcode scanner**, fast and working over plain `http://`
 - **Apple Health**: your daily calories, protein, carbs, fat and fibre are saved to the Health app (turn it on under **You → iPhone app**)
@@ -27,7 +27,7 @@ npm install
 npm run ios:create
 ```
 
-`ios:create` generates the Xcode project in `ios/` and applies Matkoll's settings (camera and Health permission texts, Apple Health entitlement, local network access, icon). If your Mac asks to install developer tools when you run `git`, accept and run the command again.
+`ios:create` generates the Xcode project in `ios/` and applies LoCal's settings (camera and Health permission texts, Apple Health entitlement, local network access, icon). If your Mac asks to install developer tools when you run `git`, accept and run the command again.
 
 ## 2. Open it in Xcode
 
@@ -42,7 +42,7 @@ npm run ios:open
 1. **Xcode → Settings → Accounts**: click **+** and sign in with your Apple ID. It shows up as "Your Name (Personal Team)".
 2. In the project navigator, click **App**, then the **App** target → **Signing & Capabilities**.
 3. Tick **Automatically manage signing** and pick your **Personal Team**.
-4. Change **Bundle Identifier** to something only you use, e.g. `se.osterbergdesign.matkoll.yourname`.
+4. Change **Bundle Identifier** to something only you use, e.g. `se.osterbergdesign.localtracker.yourname`.
 5. If Xcode shows a signing error that mentions **HealthKit**, your free account can't sign Apple Health. Build without it and everything else still works:
    ```bash
    HEALTH=0 npm run ios:sync
@@ -76,7 +76,7 @@ Each family phone gets the same treatment once; with a free Apple ID, every phon
 ./build-ipa.sh
 ```
 
-That writes `build/Matkoll.ipa`, built without Apple Health because these tools can't sign it. AirDrop the file to your phone and open it with SideStore or AltStore. Follow their setup guides first; they need a one-time setup with your Mac. The 3-app limit counts the sideloading tool itself.
+That writes `build/LoCal.ipa`, built without Apple Health because these tools can't sign it. AirDrop the file to your phone and open it with SideStore or AltStore. Follow their setup guides first; they need a one-time setup with your Mac. The 3-app limit counts the sideloading tool itself.
 
 Apple's EU alternative app marketplaces (AltStore PAL and others) don't help here: apps in them must still be published by a paid developer account.
 
@@ -86,7 +86,7 @@ In Xcode: **Product → Archive**, then **Distribute App → TestFlight & App St
 
 ## Updating the app
 
-Most changes arrive through the server (`pct exec <id> -- matkoll-update`) and need nothing here. When this folder changes:
+Most changes arrive through the server (`pct exec <id> -- local-tracker-update`) and need nothing here. When this folder changes:
 
 ```bash
 cd LoCal-Tracker
@@ -100,9 +100,9 @@ Then press **Run** in Xcode (or run `./build-ipa.sh` again for SideStore/AltStor
 
 ## Troubleshooting
 
-- **"Can't reach Matkoll"**: the phone must be on your home network (or Tailscale). Check the address under **You → Change server**, and that the container is running.
+- **"Can't reach LoCal"**: the phone must be on your home network (or Tailscale). Check the address under **You → Change server**, and that the container is running.
 - **The app asks for Local Network access**: allow it; that's how it reaches your server on the home network.
-- **Barcode scanner says camera access is off**: **Settings → Matkoll → Camera**.
-- **Nothing appears in Apple Health**: **Health app → Sharing → Apps → Matkoll** and allow writing for Dietary Energy and the nutrients.
+- **Barcode scanner says camera access is off**: **Settings → LoCal → Camera**.
+- **Nothing appears in Apple Health**: **Health app → Sharing → Apps → LoCal** and allow writing for Dietary Energy and the nutrients.
 - **Signing errors about HealthKit**: with a free Apple ID, run `HEALTH=0 npm run ios:sync` and press Run again. With a paid team, your Apple ID needs the certificates access from step 3.
 - **"Maximum number of apps" error**: a free Apple ID allows 3 sideloaded apps per phone. Delete one you don't use.

@@ -8,7 +8,7 @@ import requests
 
 from . import db
 
-UA = {"User-Agent": "Matkoll/1.0 (self-hosted calorie tracker)"}
+UA = {"User-Agent": "LoCal/1.0 (self-hosted calorie tracker)"}
 OFF_BASE = os.environ.get("OFF_BASE_URL", "https://world.openfoodfacts.org")
 SLV_BASE = os.environ.get("SLV_BASE_URL", "https://dataportal.livsmedelsverket.se/livsmedel/api/v1")
 USDA_BASE = "https://api.nal.usda.gov/fdc/v1"

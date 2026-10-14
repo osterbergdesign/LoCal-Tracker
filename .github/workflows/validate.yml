@@ -28,4 +28,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: ./scripts/sync-ha.sh
-      - run: git diff --exit-code -- custom_components/matkoll/matkoll_app || (echo "Run ./scripts/sync-ha.sh and commit the result" && exit 1)
+      - run: git diff --exit-code -- custom_components/local_tracker/core || (echo "Run ./scripts/sync-ha.sh and commit the result" && exit 1)

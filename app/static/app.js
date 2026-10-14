@@ -1,4 +1,4 @@
-// Matkoll front end. Plain ES modules, no build step.
+// LoCal front end. Plain ES modules, no build step.
 
 const MEALS = ["breakfast", "lunch", "dinner", "snack"];
 const MEAL_LABEL = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner", snack: "Snacks" };
@@ -8,9 +8,9 @@ const PROVIDER_LABEL = { ollama: "Ollama (local)", anthropic: "Claude", openai: 
 const state = { user: null, settings: null, date: todayISO() };
 const view = document.getElementById("view");
 
-// Running inside the Matkoll iPhone app? Its native features are reached through Capacitor's bridge.
+// Running inside the LoCal iPhone app? Its native features are reached through Capacitor's bridge.
 const NATIVE = window.Capacitor?.isNativePlatform?.() ? window.Capacitor : null;
-const native = (method, options = {}) => NATIVE.nativePromise("MatkollNative", method, options);
+const native = (method, options = {}) => NATIVE.nativePromise("LocalTrackerNative", method, options);
 
 // Running as a Home Assistant panel? The panel (ha-panel.js) hands us its `hass` object, and all
 // requests go over Home Assistant's own websocket, signed in as the HA user.
@@ -18,7 +18,7 @@ const HA_MODE = new URLSearchParams(location.search).has("ha");
 let HASS = null;
 let hassReady;
 const hassPromise = new Promise((r) => (hassReady = r));
-window.__matkollSetHass = (h) => {
+window.__localTrackerSetHass = (h) => {
   const first = !HASS;
   HASS = h;
   if (first) hassReady(h);
@@ -54,7 +54,7 @@ function haScan() {
       alternative_option_label: "Type the number instead" } });
   });
 }
-// Which native scanner to use, if any: the Matkoll iPhone app's or the Home Assistant app's.
+// Which native scanner to use, if any: the LoCal iPhone app's or the Home Assistant app's.
 const nativeScan = () => (NATIVE ? native("scanBarcode") : haScanner() ? haScan() : null);
 const hasNativeScan = () => !!(NATIVE || haScanner());
 
@@ -67,7 +67,7 @@ const blobToBase64 = (blob) => new Promise((resolve, reject) => {
 
 async function haRequest(path, { method = "GET", body, form, raw } = {}) {
   const hass = HASS || await hassPromise;
-  const msg = { type: "matkoll/request", method, path };
+  const msg = { type: "local_tracker/request", method, path };
   if (form) {
     msg.form = { fields: {}, files: {} };
     for (const [k, v] of form.entries()) {
@@ -211,8 +211,8 @@ function renderAuth(needsSetup) {
   $("#tabs").classList.add("hidden");
   view.replaceChildren(el(`<div class="auth">
     <img class="mark" src="/static/icon.svg" alt="">
-    <h1>${needsSetup ? "Set up Matkoll" : "Sign in"}</h1>
-    <p class="muted">${needsSetup ? "Create the first account. It becomes the admin who can add the rest of the household." : "Sign in to your household's Matkoll."}</p>
+    <h1>${needsSetup ? "Set up LoCal" : "Sign in"}</h1>
+    <p class="muted">${needsSetup ? "Create the first account. It becomes the admin who can add the rest of the household." : "Sign in to your household's LoCal."}</p>
     <form>
       <label class="field"><span>Username</span><input name="username" autocomplete="username" required autocapitalize="none"></label>
       <label class="field"><span>Password</span><input name="password" type="password" autocomplete="${needsSetup ? "new-password" : "current-password"}" required minlength="6"></label>
@@ -347,7 +347,7 @@ async function renderToday() {
 
 // ---------------------------------------------------------------- Apple Health (iPhone app only)
 
-const healthKey = () => `matkoll.health.${location.host}.${state.user?.id}`;
+const healthKey = () => `local-tracker.health.${location.host}.${state.user?.id}`;
 function healthEnabled() {
   try { return !!NATIVE && localStorage.getItem(healthKey()) === "1"; } catch { return false; }
 }
@@ -368,7 +368,7 @@ async function syncHealth(date, totals, force = false) {
 
 async function enableHealth() {
   const res = await native("healthRequest");
-  if (!res?.allowed) throw new Error("Apple Health access wasn't allowed. You can turn it on in the Health app → Sharing → Apps → Matkoll.");
+  if (!res?.allowed) throw new Error("Apple Health access wasn't allowed. You can turn it on in the Health app → Sharing → Apps → LoCal.");
   localStorage.setItem(healthKey(), "1");
   // Fill in the last week so Health isn't empty.
   for (let i = 0; i < 7; i++) {
@@ -1306,7 +1306,7 @@ async function renderSettings() {
     try {
       const res = HA_MODE ? await haRequest("/api/export.csv", { raw: true }) : null;
       const text = HA_MODE ? res.text : await (await fetch("/api/export.csv", { credentials: "same-origin" })).text();
-      const a = el(`<a download="matkoll-${esc(u.username)}.csv"></a>`);
+      const a = el(`<a download="local-tracker-${esc(u.username)}.csv"></a>`);
       a.href = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
       document.body.append(a); a.click(); a.remove();
     } catch (e) { fail(e); }
