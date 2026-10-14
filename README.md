@@ -1,16 +1,68 @@
 # LoCal
 
-A self-hosted meal planner and calorie tracker for a household. It runs as one small Docker container with a SQLite database, and installs on your phone like an app.
+A self-hosted meal planner and calorie tracker for a household. Install it in **Home Assistant through HACS**, where it gets its own sidebar panel in the Home Assistant app and on your computer, or run it on its own (Proxmox LXC or Docker).
 
 - **Barcode scanning** with the phone camera. Products are looked up in Open Food Facts and saved locally, so each barcode is only fetched once. Unknown products can be added from the label and are remembered.
 - **Photo logging.** Snap your plate and a vision model lists what it sees with estimated grams and calories. You check the amounts, swap any item for a matching food from the database, and log it. Works with a local Ollama model, the Claude API, the OpenAI API (or any OpenAI-compatible server), or several at once.
 - **Recipes with kcal per gram.** Add raw ingredients, weigh the finished dish, and Matkoll works out kcal per gram and per 100 g of the cooked food. Recipes can then be logged by the gram like any other food, and used inside other recipes.
 - **Shared meal plan.** Plan the week for the household; each person logs their own portion with one tap.
+- **Mealie.** Import Mealie recipes with calories worked out from their ingredients, and keep the meal plan in sync both ways.
+- **Recipe links.** Paste a link from ICA, Arla, Köket and most other recipe sites; ingredients are matched to foods and their grams estimated for you to check.
 - **Household accounts.** Personal diaries and goals; shared foods, recipes and plan.
 - **Food data:** Livsmedelsverket's ~2,500 Swedish foods (downloaded on first start), USDA FoodData Central search, Open Food Facts search, and your own foods.
 - CSV export of your diary.
 
-## Quick start
+## Home Assistant (HACS)
+
+1. In Home Assistant, open **HACS**, click the **⋮** menu (top right) → **Custom repositories**.
+2. Repository: `https://github.com/osterbergdesign/LoCal-Tracker`, type: **Integration** → **Add**.
+3. Search HACS for **Matkoll**, open it, click **Download**, then restart Home Assistant (**Settings → System → Restart**).
+4. **Settings → Devices & services → Add integration → Matkoll**.
+
+**Matkoll** now appears in the sidebar. Everyone with a Home Assistant login gets their own diary and goals automatically; Home Assistant admins can change Matkoll's settings (photo recognition, Mealie) under **You**. The Swedish food database downloads in the background the first time.
+
+In the **Home Assistant phone app**, the barcode button opens the app's own scanner. On a computer, scanning works in the browser when Home Assistant is opened over HTTPS (Nabu Casa or your own certificate).
+
+Data is stored in `/config/matkoll/` and is included in Home Assistant backups.
+
+### What Home Assistant gets
+
+| Entity | What it shows |
+| --- | --- |
+| `sensor.matkoll_<name>_calories_eaten` | Calories logged today, per person (also `_calories_left`, `_protein_eaten`, `_carbohydrates_eaten`, `_fat_eaten`) |
+| `sensor.matkoll_planned_breakfast` … `_dinner`, `_snack` | Today's planned meals from the shared plan |
+| `calendar.matkoll_meal_plan` | The whole meal plan, for the calendar panel and dashboards |
+
+Actions:
+
+- **`matkoll.log_food`**: adds food by name or barcode to someone's diary. Without `person`, it uses whoever ran it.
+  ```yaml
+  action: matkoll.log_food
+  data:
+    food: havregryn
+    grams: 80
+    meal: breakfast
+    person: person.anna
+  ```
+- **`matkoll.sync_mealie`**: syncs the meal plan with Mealie now (it also happens every 15 minutes).
+
+Example automation idea: a notification at 14:00 if `sensor.matkoll_anna_calories_eaten` is still below 300.
+
+## Mealie
+
+Under **You → Mealie** (admin), enter Mealie's address and an API token (in Mealie: your user → **API Tokens** → create). Then:
+
+- **Recipes → Import → From Mealie** lists your Mealie recipes. Pick one, check the ingredient matches and grams, and it becomes a Matkoll recipe with kcal per gram.
+- **Recipes → Import → From a link** with **Save in Mealie too** ticked sends the link to Mealie, which reads the page (ICA, Arla, Köket and hundreds more), and then imports it into Matkoll.
+- **Meal plan sync, both ways:** meals planned in Mealie appear in Matkoll's plan (tagged *Mealie*), and meals planned in Matkoll appear in Mealie, as a recipe link when the dish came from Mealie, otherwise as a note. Deleting or moving a meal on one side does the same on the other. Mealie recipes that aren't imported yet show up as one portion using Mealie's own nutrition numbers, if it has any; importing the recipe replaces them with exact values.
+
+Ingredient amounts in grams are exact. Amounts in dl, spoons, pieces ("1 gul lök") or packs ("1 burk à 400 g") are converted with typical weights and densities, so check them on the import screen.
+
+## iPhone app (optional)
+
+`ios-app/` holds a native iPhone app around a standalone server, with Apple's barcode scanner and Apple Health sync. It needs a Mac with Xcode, and with a free Apple ID it must be reinstalled every 7 days; see [ios-app/README.md](ios-app/README.md). With Home Assistant, the HA app covers this instead.
+
+## Standalone: Docker
 
 ```bash
 cp .env.example .env        # optional, everything can be set in the app later
@@ -19,13 +71,7 @@ docker compose up -d --build
 
 Open `http://<server>:8080`, create the first account (it becomes the admin), and add the rest of the household under **You → Household**.
 
-The Swedish food database downloads in the background on first start; progress shows under **You → Food databases**.
-
-## iPhone app
-
-`ios-app/` holds a native iPhone app around your server, with Apple's barcode scanner and Apple Health sync. Building it needs a Mac with Xcode; see [ios-app/README.md](ios-app/README.md).
-
-## Proxmox LXC
+## Standalone: Proxmox LXC
 
 Paste this into the shell of your Proxmox VE host (node → **Shell**):
 
@@ -66,7 +112,7 @@ For photo recognition the script can point Matkoll at an Ollama server you alrea
 
 `lxc/install.sh` also works on any Debian or Ubuntu machine or VM, without Proxmox.
 
-## Use HTTPS for the camera
+## Use HTTPS for the camera (standalone)
 
 Browsers only allow live camera access on HTTPS pages. Over plain HTTP everything else works, and you can still photograph a barcode or a meal through the phone's camera app, but the live barcode scanner needs HTTPS. Easy options:
 
@@ -151,14 +197,19 @@ Data goes to `./data`. For barcode scanning on iPhone, also download `@zxing/lib
 ## Project layout
 
 ```
-app/main.py      routes: auth, foods, diary, recipes, plan, photo, settings
-app/db.py        SQLite schema and helpers
-app/sources.py   Open Food Facts, USDA, Livsmedelsverket
-app/ai.py        photo estimation via Ollama, Claude or OpenAI
-app/static/      the web app (plain JS, no build step)
-lxc/             Proxmox helper script and the installer it runs
-ios-app/         iPhone app (Capacitor): setup screen, native scanner, Apple Health
+app/main.py         routes: auth, foods, diary, recipes, plan, import, Mealie sync, photo, settings
+app/db.py           SQLite schema and helpers
+app/sources.py      Open Food Facts, USDA, Livsmedelsverket
+app/ingredients.py  turns "2 dl vetemjöl" into a name and grams
+app/mealie.py       Mealie API client
+app/ai.py           photo estimation via Ollama, Claude or OpenAI
+app/static/         the web app (plain JS, no build step); ha-panel.js + ha.html for Home Assistant
+custom_components/matkoll/   the Home Assistant integration (HACS)
+lxc/                Proxmox helper script and the installer it runs
+ios-app/            iPhone app (Capacitor): setup screen, native scanner, Apple Health
 ```
+
+The integration carries its own copy of `app/` in `custom_components/matkoll/matkoll_app/`, because HACS only downloads that folder. After changing anything in `app/`, run `./scripts/sync-ha.sh` (CI fails if the copy is out of date).
 
 ## Data sources and licences
 

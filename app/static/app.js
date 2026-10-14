@@ -2,7 +2,7 @@
 
 const MEALS = ["breakfast", "lunch", "dinner", "snack"];
 const MEAL_LABEL = { breakfast: "Breakfast", lunch: "Lunch", dinner: "Dinner", snack: "Snacks" };
-const SOURCE_LABEL = { custom: "Yours", recipe: "Recipe", off: "Barcode", slv: "Livsmedelsverket", usda: "USDA", photo: "Photo" };
+const SOURCE_LABEL = { custom: "Yours", recipe: "Recipe", off: "Barcode", slv: "Livsmedelsverket", usda: "USDA", photo: "Photo", mealie: "Mealie" };
 const PROVIDER_LABEL = { ollama: "Ollama (local)", anthropic: "Claude", openai: "OpenAI" };
 
 const state = { user: null, settings: null, date: todayISO() };
@@ -11,6 +11,77 @@ const view = document.getElementById("view");
 // Running inside the Matkoll iPhone app? Its native features are reached through Capacitor's bridge.
 const NATIVE = window.Capacitor?.isNativePlatform?.() ? window.Capacitor : null;
 const native = (method, options = {}) => NATIVE.nativePromise("MatkollNative", method, options);
+
+// Running as a Home Assistant panel? The panel (ha-panel.js) hands us its `hass` object, and all
+// requests go over Home Assistant's own websocket, signed in as the HA user.
+const HA_MODE = new URLSearchParams(location.search).has("ha");
+let HASS = null;
+let hassReady;
+const hassPromise = new Promise((r) => (hassReady = r));
+window.__matkollSetHass = (h) => {
+  const first = !HASS;
+  HASS = h;
+  if (first) hassReady(h);
+};
+
+/** Home Assistant app's built-in barcode scanner, when we're inside the HA phone app. */
+function haScanner() {
+  const ext = HASS?.auth?.external;
+  return ext?.config?.hasBarCodeScanner ? ext : null;
+}
+function haScan() {
+  return new Promise((resolve, reject) => {
+    const ext = haScanner();
+    const previous = ext._commandHandler;  // the app supports one handler, so pass everything else on
+    const restore = () => { ext._commandHandler = previous; };
+    ext._commandHandler = (msg) => {
+      if (msg.command === "bar_code/scan_result") {
+        restore();
+        ext.fireMessage({ type: "bar_code/close" });
+        resolve({ code: String(msg.payload?.rawValue || "") });
+        return true;
+      }
+      if (msg.command === "bar_code/aborted") {
+        restore();
+        const manual = msg.payload?.reason === "alternative_options";
+        reject(Object.assign(new Error(manual ? "Type the number" : "Scanning was cancelled."), { code: manual ? "manual" : "cancelled" }));
+        return true;
+      }
+      return previous ? previous(msg) : false;
+    };
+    ext.fireMessage({ type: "bar_code/scan", payload: {
+      title: "Scan a barcode", description: "Point the camera at the barcode on the package",
+      alternative_option_label: "Type the number instead" } });
+  });
+}
+// Which native scanner to use, if any: the Matkoll iPhone app's or the Home Assistant app's.
+const nativeScan = () => (NATIVE ? native("scanBarcode") : haScanner() ? haScan() : null);
+const hasNativeScan = () => !!(NATIVE || haScanner());
+
+const blobToBase64 = (blob) => new Promise((resolve, reject) => {
+  const r = new FileReader();
+  r.onload = () => resolve(String(r.result).split(",", 2)[1] || "");
+  r.onerror = () => reject(r.error);
+  r.readAsDataURL(blob);
+});
+
+async function haRequest(path, { method = "GET", body, form, raw } = {}) {
+  const hass = HASS || await hassPromise;
+  const msg = { type: "matkoll/request", method, path };
+  if (form) {
+    msg.form = { fields: {}, files: {} };
+    for (const [k, v] of form.entries()) {
+      if (v instanceof Blob) msg.form.files[k] = { name: v.name || "upload.jpg", type: v.type || "application/octet-stream", data: await blobToBase64(v) };
+      else msg.form.fields[k] = String(v);
+    }
+  } else if (body !== undefined) {
+    msg.body = body;
+  }
+  const res = await hass.connection.sendMessagePromise(msg);
+  if (raw) return res;
+  if (res.status >= 400) throw new Error(res.json?.detail || `Request failed (${res.status})`);
+  return res.json;
+}
 
 // ---------------------------------------------------------------- small utilities
 
@@ -69,6 +140,7 @@ const ICON = {
 };
 
 async function api(path, { method = "GET", body, form } = {}) {
+  if (HA_MODE) return haRequest(path, { method, body, form });
   const opts = { method, headers: {}, credentials: "same-origin" };
   if (form) opts.body = form;
   else if (body !== undefined) {
@@ -544,12 +616,13 @@ async function makeDetector() {
 }
 
 function scanPanel(sheet, opts, panel) {
-  const live = !NATIVE && window.isSecureContext && navigator.mediaDevices?.getUserMedia;
+  const NATIVE_SCAN = hasNativeScan();
+  const live = !NATIVE_SCAN && window.isSecureContext && navigator.mediaDevices?.getUserMedia;
   panel.append(el(`<div>
-    ${NATIVE ? `<button class="btn block" data-native-scan>${ICON.barcode} Open the scanner</button>`
+    ${NATIVE_SCAN ? `<button class="btn block" data-native-scan>${ICON.barcode} Open the scanner</button>`
       : live ? '<div class="scanner"><video playsinline muted></video><div class="aim"></div></div><p class="hint" data-status>Point the camera at the barcode.</p>'
       : `<div class="callout">The live scanner needs the app to be opened over HTTPS. You can still take a photo of the barcode.</div>`}
-    <label class="btn ghost block${NATIVE ? " hidden" : ""}" style="margin-top:10px">${ICON.camera} Take a photo of the barcode
+    <label class="btn ghost block${NATIVE_SCAN ? " hidden" : ""}" style="margin-top:10px">${ICON.camera} Take a photo of the barcode
       <input type="file" accept="image/*" capture="environment" class="hidden"></label>
     <form class="row" style="margin-top:12px">
       <input inputmode="numeric" placeholder="Or type the number" aria-label="Barcode number" pattern="[0-9 ]{6,16}">
@@ -591,13 +664,14 @@ function scanPanel(sheet, opts, panel) {
     } catch (err) { fail(err); }
   };
 
-  if (NATIVE) {
+  if (NATIVE_SCAN) {
     const openScanner = async () => {
       try {
-        const res = await native("scanBarcode");
+        const res = await nativeScan();
         if (res?.code) onCode(res.code.replace(/\D/g, "") || res.code);
       } catch (e) {
-        if (e?.code !== "cancelled") toast(e?.message || "The scanner couldn't start", true);
+        if (e?.code === "manual") $("form input", panel)?.focus();
+        else if (e?.code !== "cancelled") toast(e?.message || "The scanner couldn't start", true);
       }
     };
     $("[data-native-scan]", panel).onclick = openScanner;
@@ -788,7 +862,9 @@ function photoReview(sheet, opts, res, imgSrc) {
 async function renderRecipes() {
   const recipes = await api("/api/recipes");
   const root = el(`<div>
-    <div class="topbar"><h1>Recipes</h1><a class="btn" href="#/recipe/new" style="text-decoration:none">${ICON.plus} New recipe</a></div>
+    <div class="topbar"><h1>Recipes</h1>
+      <div class="row" style="flex:0;gap:8px"><button class="btn ghost" data-import>Import</button>
+      <a class="btn" href="#/recipe/new">${ICON.plus} New</a></div></div>
     <p class="muted" style="margin-top:0">Shared with everyone in the household. Each recipe can be logged like any food, by the gram.</p>
     <div class="list"></div></div>`);
   const list = $(".list", root);
@@ -796,10 +872,175 @@ async function renderRecipes() {
   for (const r of recipes) {
     const row = el(`<a class="item" href="#/recipe/${r.id}" style="text-decoration:none;color:inherit">
       <div class="main"><div class="title">${esc(r.name)}</div>
-      <div class="meta num">${r.n_items} ingredient${r.n_items === 1 ? "" : "s"}${r.serving_g ? ` · ${r0(r.serving_g)} g per serving` : ""}</div></div>
+      <div class="meta num">${r.mealie_slug ? '<span class="src">Mealie</span>' : ""}${r.n_items} ingredient${r.n_items === 1 ? "" : "s"}${r.serving_g ? ` · ${r0(r.serving_g)} g per serving` : ""}</div></div>
       <div class="kcal num">${fmt(r.kcal_per100)}<span class="muted small"> /100 g</span></div></a>`);
     list.append(row);
   }
+  $("[data-import]", root).onclick = openImport;
+  view.replaceChildren(root);
+}
+
+// ---------------------------------------------------------------- recipe import (link or Mealie)
+
+function openImport(tab) {
+  const sheet = openSheet();
+  const hasMealie = !!state.settings.mealie?.configured;
+  tab = typeof tab === "string" ? tab : "link";
+  const box = el(`<div>
+    ${hasMealie ? `<div class="seg"><button data-t="link" class="${tab === "link" ? "on" : ""}">From a link</button>
+      <button data-t="mealie" class="${tab === "mealie" ? "on" : ""}">From Mealie</button></div>` : ""}
+    <div data-panel></div></div>`);
+  sheet.set("Import a recipe", box);
+  $$("[data-t]", box).forEach((b) => (b.onclick = () => { sheet.close(); openImport(b.dataset.t); }));
+  const panel = $("[data-panel]", box);
+  const done = (draft) => { state.importDraft = draft; sheet.close(); location.hash = "#/recipe/import"; };
+
+  if (tab === "link") {
+    panel.append(el(`<form>
+      <label class="field"><span>Recipe page</span>
+        <input name="url" type="url" inputmode="url" autocapitalize="none" placeholder="https://www.ica.se/recept/…" required></label>
+      <p class="hint">ICA, Arla, Köket, Coop and most other recipe sites work.</p>
+      ${hasMealie ? '<label class="row" style="margin:12px 0;justify-content:flex-start;gap:10px"><input type="checkbox" name="via_mealie" checked style="flex:0;width:22px;min-height:22px"><span>Save in Mealie too</span></label>' : ""}
+      <button class="btn block" type="submit">Import</button></form>`));
+    $("form", panel).onsubmit = async (e) => {
+      e.preventDefault();
+      const btn = $('button[type="submit"]', panel);
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Reading the recipe…';
+      try {
+        done(await api("/api/import/url", { method: "POST", body: {
+          url: e.target.url.value.trim(), via_mealie: !!e.target.via_mealie?.checked } }));
+      } catch (err) { fail(err); btn.disabled = false; btn.textContent = "Import"; }
+    };
+    setTimeout(() => $("input", panel).focus(), 60);
+  } else {
+    panel.append(el(`<div><input type="search" placeholder="Search your Mealie recipes" aria-label="Search Mealie">
+      <div class="list" style="margin-top:12px" data-list></div></div>`));
+    const input = $("input", panel), list = $("[data-list]", panel);
+    const run = async () => {
+      list.replaceChildren(el('<div class="empty" style="padding:14px 16px"><span class="spinner"></span></div>'));
+      try {
+        const res = await api(`/api/mealie/recipes?q=${encodeURIComponent(input.value.trim())}`);
+        list.replaceChildren();
+        if (!res.length) list.append(el('<div class="empty" style="padding:14px 16px">No recipes found in Mealie.</div>'));
+        for (const r of res) {
+          const row = el(`<button class="item"><div class="main"><div class="title">${esc(r.name)}</div>
+            <div class="meta">${esc(r.yield || (r.servings ? r.servings + " servings" : ""))}</div></div></button>`);
+          row.onclick = async () => {
+            row.disabled = true;
+            try { done(await api("/api/mealie/import", { method: "POST", body: { slug: r.slug } })); }
+            catch (err) { fail(err); row.disabled = false; }
+          };
+          list.append(row);
+        }
+      } catch (err) { list.replaceChildren(el(`<div class="callout warn">${esc(err.message)}</div>`)); }
+    };
+    input.oninput = debounce(run, 300);
+    run();
+  }
+}
+
+function renderImportReview() {
+  const d = state.importDraft;
+  if (!d) { location.hash = "#/recipes"; return; }
+  const items = d.items.map((it) => ({ ...it, choice: it.skip || !it.food_id ? (it.skip ? "skip" : "") : String(it.food_id) }));
+  const root = el(`<div>
+    <div class="topbar"><a class="icon-btn" href="#/recipes" aria-label="Back to recipes">${ICON.left}</a><div style="flex:1"></div></div>
+    <label class="field"><span>Recipe name</span><input data-name value="${esc(d.name)}" style="font-size:20px;font-weight:650"></label>
+    <p class="muted small" style="margin-top:0">${d.mealie_slug ? "From Mealie" : ""}${d.mealie_slug && d.source_url ? " · " : ""}${d.source_url ? esc(new URL(d.source_url).hostname.replace(/^www\./, "")) : ""}</p>
+    <h2 style="margin:16px 0 4px">Check the ingredients</h2>
+    <p class="hint" style="margin-top:0">Pick the matching food and check the grams. Amounts in dl, pieces or packs are estimates.</p>
+    <div data-items></div>
+    <div class="grid2" style="margin-top:6px">
+      <label class="field"><span>Cooked weight (g)</span><input data-final type="number" inputmode="decimal" min="1" step="any" placeholder="optional"></label>
+      <label class="field"><span>Servings</span><input data-servings type="number" inputmode="decimal" min="0.1" step="any" value="${d.servings}"></label>
+    </div>
+    <p class="hint">Weigh the finished dish without the pot for exact kcal per gram. You can add it later too.</p>
+    <div class="recipe-sum" data-sum></div>
+    <button class="btn block" data-save>Create recipe</button>
+  </div>`);
+  const box = $("[data-items]", root), sum = $("[data-sum]", root);
+  const foodsById = new Map();
+  items.forEach((it) => it.matches.forEach((m) => foodsById.set(String(m.id), m)));
+
+  const calc = () => {
+    const t = { kcal: 0, protein: 0, carbs: 0, fat: 0 };
+    let raw = 0, missing = 0;
+    for (const it of items) {
+      if (it.choice === "skip") continue;
+      const f = foodsById.get(it.choice);
+      if (!f || !it.grams) { missing++; continue; }
+      raw += it.grams;
+      for (const k in t) t[k] += ((f[k] || 0) * it.grams) / 100;
+    }
+    const weight = parseFloat($("[data-final]", root).value) || raw;
+    const serv = parseFloat($("[data-servings]", root).value) || 1;
+    sum.innerHTML = `<div class="muted small">Whole dish</div>
+      <div class="kpg num">${weight ? (t.kcal / weight).toFixed(2) : "–"} <span style="font-size:18px;font-weight:600">kcal per gram</span></div>
+      <dl><dt>Total energy</dt><dd>${fmt(t.kcal)} kcal</dd>
+        <dt>Per serving (1/${r1(serv)})</dt><dd>${fmt(weight / serv)} g · ${fmt(t.kcal / serv)} kcal</dd>
+        ${d.nutrition?.kcal ? `<dt>Mealie says per serving</dt><dd>${fmt(d.nutrition.kcal)} kcal</dd>` : ""}
+      </dl>
+      ${missing ? `<p class="small" style="color:var(--over);margin:8px 0 0">${missing} ingredient${missing > 1 ? "s" : ""} still need${missing > 1 ? "" : "s"} a food and grams, or Skip.</p>` : ""}`;
+  };
+
+  items.forEach((it, i) => {
+    const row = el(`<div class="ai-item">
+      <div class="small muted" style="margin-bottom:6px">${esc(it.line)}</div>
+      <div class="row">
+        <select data-food aria-label="Food for ${esc(it.name)}"></select>
+        <input data-grams class="g" type="number" inputmode="decimal" min="0" step="any" value="${it.grams ?? ""}" placeholder="g" aria-label="Grams" style="flex:0 0 92px">
+        <span class="muted small" style="flex:0">g</span>
+      </div></div>`);
+    const sel = $("[data-food]", row), grams = $("[data-grams]", row);
+    const fill = () => {
+      sel.innerHTML = `${it.choice ? "" : '<option value="" selected>Choose a food…</option>'}
+        ${it.matches.map((m) => `<option value="${m.id}" ${String(m.id) === it.choice ? "selected" : ""}>${esc(m.name)} · ${fmt(m.kcal)} kcal/100 g</option>`).join("")}
+        <option value="search">Search for another food…</option>
+        <option value="skip" ${it.choice === "skip" ? "selected" : ""}>Skip (salt, water…)</option>`;
+      row.style.opacity = it.choice === "skip" ? 0.55 : 1;
+      grams.disabled = it.choice === "skip";
+      const bad = it.choice !== "skip" && (!it.choice || !it.grams);
+      row.style.outline = bad ? "2px solid color-mix(in srgb, var(--over) 45%, transparent)" : "";
+    };
+    fill();
+    sel.onchange = () => {
+      if (sel.value === "search") {
+        openAdd({ mode: "recipe", onPick: ({ food, grams: g }) => {
+          foodsById.set(String(food.id), food);
+          if (!it.matches.some((m) => m.id === food.id)) it.matches.unshift(food);
+          it.choice = String(food.id); it.grams = g; grams.value = g; fill(); calc();
+        } });
+        sel.value = it.choice || "";
+        return;
+      }
+      it.choice = sel.value; fill(); calc();
+    };
+    grams.oninput = () => { it.grams = parseFloat(grams.value) || null; fill(); calc(); };
+    box.append(row);
+  });
+  $("[data-final]", root).oninput = calc;
+  $("[data-servings]", root).oninput = calc;
+  calc();
+
+  $("[data-save]", root).onclick = async () => {
+    const chosen = items.filter((it) => it.choice && it.choice !== "skip" && it.grams > 0);
+    if (!chosen.length) return toast("Choose at least one ingredient", true);
+    const open = items.filter((it) => it.choice !== "skip" && !(it.choice && it.grams > 0)).length;
+    if (open && !confirm(`${open} ingredient${open > 1 ? "s are" : " is"} left out. Create the recipe anyway?`)) return;
+    try {
+      const saved = await api("/api/recipes", { method: "POST", body: {
+        name: $("[data-name]", root).value, servings: $("[data-servings]", root).value,
+        final_weight_g: $("[data-final]", root).value || null,
+        notes: d.source_url ? `From ${d.source_url}` : "",
+        source_url: d.source_url || null, mealie_id: d.mealie_id || null, mealie_slug: d.mealie_slug || null,
+        items: chosen.map((it) => ({ food_id: +it.choice, grams: it.grams })),
+      } });
+      state.importDraft = null;
+      toast("Recipe created");
+      location.hash = `#/recipe/${saved.id}`;
+    } catch (e) { fail(e); }
+  };
   view.replaceChildren(root);
 }
 
@@ -918,6 +1159,8 @@ async function renderPlan() {
       </div>
     </div>
     <p class="muted" style="margin-top:0">Shared with the household. Amounts are per person; each of you logs your own portion.</p>
+    ${plan.mealie ? `<div class="row" style="justify-content:space-between;margin:-4px 0 6px"><span class="small muted">Synced with Mealie</span>
+      <button class="btn plain" style="flex:0" data-msync>Sync now</button></div>` : ""}
     <div data-days></div></div>`);
   const daysEl = $("[data-days]", root);
   for (const [date, meals] of Object.entries(plan.days)) {
@@ -934,7 +1177,7 @@ async function renderPlan() {
       list.append(el(`<div class="plan-meal">${MEAL_LABEL[m]}</div>`));
       for (const it of meals[m]) {
         const row = el(`<button class="item"><div class="main"><div class="title">${esc(it.food.name)}</div>
-          <div class="meta num">${r0(it.grams)} g${it.added_by ? " · added by " + esc(it.added_by) : ""}</div></div>
+          <div class="meta num">${it.origin === "mealie" ? '<span class="src">Mealie</span>' : ""}${r0(it.grams)} g${it.added_by ? " · added by " + esc(it.added_by) : ""}${it.note ? " · " + esc(it.note) : ""}</div></div>
           <div class="kcal num">${fmt(it.kcal)}</div></button>`);
         row.onclick = () => planItemSheet(it, date);
         list.append(row);
@@ -952,6 +1195,14 @@ async function renderPlan() {
     list.append(actions);
     daysEl.append(day);
   }
+  $("[data-msync]", root)?.addEventListener("click", async (e) => {
+    e.target.disabled = true;
+    try {
+      const st = await api("/api/mealie/sync", { method: "POST" });
+      toast(`Synced: ${st.pulled} from Mealie, ${st.pushed} to Mealie${st.removed ? `, ${st.removed} removed` : ""}`);
+      renderPlan();
+    } catch (err) { fail(err); e.target.disabled = false; }
+  });
   $$("[data-week]", root).forEach((b) => (b.onclick = () => { state.planStart = addDays(start, +b.dataset.week); renderPlan(); }));
   $("[data-thisweek]", root).onclick = () => { state.planStart = mondayOf(todayISO()); renderPlan(); };
   view.replaceChildren(root);
@@ -1003,9 +1254,10 @@ async function renderSettings() {
     <section class="section">
       <h2>Your data</h2>
       <p class="small muted">Everything you've logged, as a spreadsheet-friendly file.</p>
-      <a class="btn ghost" href="/api/export.csv" download>Download diary (CSV)</a>
+      <button class="btn ghost" type="button" data-export>Download diary (CSV)</button>
     </section>
-    <form class="section" data-pw>
+    ${HA_MODE ? `<section class="section"><h2>Account</h2><p class="small muted">You're signed in through Home Assistant as ${esc(u.username)}. Everyone with a Home Assistant login has their own diary and goals here.</p></section>` : ""}
+    <form class="section${HA_MODE ? " hidden" : ""}" data-pw>
       <h2>Change password</h2>
       <label class="field"><span>Current password</span><input name="password" type="password" autocomplete="current-password" required></label>
       <label class="field"><span>New password</span><input name="new_password" type="password" autocomplete="new-password" minlength="6" required></label>
@@ -1020,7 +1272,7 @@ async function renderSettings() {
       <p class="small muted">Connected to ${esc(location.host)}.</p>
       <button class="btn ghost" data-change-server>Change server</button>
     </section>` : ""}
-    <button class="btn danger block" data-logout>Sign out</button>
+    ${HA_MODE ? "" : '<button class="btn danger block" data-logout>Sign out</button>'}
   </div>`);
 
   $("[data-goals]", root).onsubmit = async (e) => {
@@ -1050,7 +1302,16 @@ async function renderSettings() {
     };
     $("[data-change-server]", root).onclick = () => { location.href = "capacitor://localhost/index.html?setup=1"; };
   }
-  $("[data-logout]", root).onclick = async () => { await api("/api/auth/logout", { method: "POST" }); state.user = null; renderAuth(false); };
+  $("[data-export]", root).onclick = async () => {
+    try {
+      const res = HA_MODE ? await haRequest("/api/export.csv", { raw: true }) : null;
+      const text = HA_MODE ? res.text : await (await fetch("/api/export.csv", { credentials: "same-origin" })).text();
+      const a = el(`<a download="matkoll-${esc(u.username)}.csv"></a>`);
+      a.href = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
+      document.body.append(a); a.click(); a.remove();
+    } catch (e) { fail(e); }
+  };
+  $("[data-logout]", root)?.addEventListener("click", async () => { await api("/api/auth/logout", { method: "POST" }); state.user = null; renderAuth(false); });
 
   const slvEl = $("[data-slv]", root);
   const drawSlv = (st) => {
@@ -1157,7 +1418,38 @@ async function adminSections(box, s) {
       toast(models.length ? `Found ${models.length} model${models.length > 1 ? "s" : ""}: ${models.slice(0, 3).join(", ")}${models.length > 3 ? "…" : ""}` : "Ollama is reachable but has no models. Run: ollama pull qwen2.5vl:7b");
     } catch (err) { fail(err); }
   };
-  box.append(hh, ai);
+  const m = s.mealie || {};
+  const ms = m.status || {};
+  const mealieForm = el(`<form class="section">
+    <h2>Mealie</h2>
+    <p class="small muted">Import recipes from Mealie and keep the meal plan in sync both ways. In Mealie, create a token under your user → API Tokens.</p>
+    <label class="field"><span>Mealie address</span><input name="mealie_url" value="${esc(m.url || "")}" placeholder="http://192.168.1.20:9000" autocapitalize="none"></label>
+    <label class="field"><span>API token</span><input name="mealie_token" value="${esc(m.token || "")}" autocomplete="off"></label>
+    <label class="row" style="margin:12px 0;justify-content:flex-start;gap:10px"><input type="checkbox" name="mealie_sync" ${m.sync !== false ? "checked" : ""} style="flex:0;width:22px;min-height:22px">
+      <span>Sync the meal plan with Mealie</span></label>
+    <p class="small muted">${ms.last ? `Last synced ${esc(ms.last)}.` : ""} ${ms.error ? `<span style="color:var(--over)">${esc(ms.error)}</span>` : ""}</p>
+    <div class="row" style="flex-wrap:wrap;gap:8px">
+      <button class="btn" type="submit" style="flex:0">Save</button>
+      <button class="btn ghost" type="button" data-mcheck style="flex:0">Test connection</button>
+      <button class="btn ghost" type="button" data-msync style="flex:0">Sync now</button></div>
+  </form>`);
+  mealieForm.onsubmit = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(mealieForm);
+    try {
+      state.settings = await api("/api/settings", { method: "PUT", body: {
+        mealie_url: fd.get("mealie_url"), mealie_token: fd.get("mealie_token"), mealie_sync: !!fd.get("mealie_sync") } });
+      toast(state.settings.mealie.configured ? "Mealie connected" : "Saved");
+    } catch (err) { fail(err); }
+  };
+  $("[data-mcheck]", mealieForm).onclick = async () => {
+    try { const r = await api("/api/mealie/check"); toast(`Connected to Mealie ${r.version}`); } catch (err) { fail(err); }
+  };
+  $("[data-msync]", mealieForm).onclick = async () => {
+    try { const st = await api("/api/mealie/sync", { method: "POST" }); toast(`Synced: ${st.pulled} from Mealie, ${st.pushed} to Mealie`); }
+    catch (err) { fail(err); }
+  };
+  box.append(...(HA_MODE ? [] : [hh]), ai, mealieForm);
 }
 
 // ---------------------------------------------------------------- routing
@@ -1172,6 +1464,7 @@ async function route() {
   try {
     if (page === "plan") await renderPlan();
     else if (page === "recipes") await renderRecipes();
+    else if (page === "recipe" && arg === "import") renderImportReview();
     else if (page === "recipe") await renderRecipe(arg || "new");
     else if (page === "settings") await renderSettings();
     else await renderToday();
@@ -1186,7 +1479,12 @@ $("#fab").onclick = () => {
 window.addEventListener("hashchange", route);
 
 (async function boot() {
-  if ("serviceWorker" in navigator && window.isSecureContext) navigator.serviceWorker.register("/sw.js").catch(() => {});
+  if (HA_MODE) {
+    document.documentElement.classList.add("in-ha");
+    await hassPromise;
+  } else if ("serviceWorker" in navigator && window.isSecureContext) {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  }
   try {
     const st = await api("/api/auth");
     if (!st.user) return renderAuth(st.needs_setup);

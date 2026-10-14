@@ -5,6 +5,13 @@ import threading
 
 DATA_DIR = os.environ.get("DATA_DIR", os.path.join(os.path.dirname(__file__), "..", "data"))
 DB_PATH = os.path.join(DATA_DIR, "matkoll.db")
+
+
+def configure(data_dir: str):
+    """Points the database somewhere else (used when running inside Home Assistant)."""
+    global DATA_DIR, DB_PATH
+    DATA_DIR = data_dir
+    DB_PATH = os.path.join(data_dir, "matkoll.db")
 NUTRIENTS = ("kcal", "protein", "carbs", "fat", "fiber")
 
 _local = threading.local()
@@ -103,10 +110,26 @@ def conn() -> sqlite3.Connection:
     return c
 
 
+# Columns added after the first release; added to existing databases on start.
+MIGRATIONS = [
+    ("users", "ha_user_id", "TEXT"),
+    ("recipes", "source_url", "TEXT"),
+    ("recipes", "mealie_id", "TEXT"),
+    ("recipes", "mealie_slug", "TEXT"),
+    ("plan", "mealie_id", "INTEGER"),
+    ("plan", "origin", "TEXT NOT NULL DEFAULT 'matkoll'"),
+]
+
+
 def init():
     os.makedirs(DATA_DIR, exist_ok=True)
     c = conn()
     c.executescript(SCHEMA)
+    for table, column, decl in MIGRATIONS:
+        cols = {r["name"] for r in c.execute(f"PRAGMA table_info({table})")}
+        if column not in cols:
+            c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
+    c.execute("CREATE INDEX IF NOT EXISTS plan_mealie ON plan(mealie_id)")
     c.commit()
 
 

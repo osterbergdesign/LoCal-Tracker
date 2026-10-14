@@ -1,0 +1,36 @@
+log_food:
+  fields:
+    food:
+      required: true
+      example: "havregryn"
+      selector:
+        text:
+    grams:
+      required: true
+      example: 80
+      selector:
+        number:
+          min: 1
+          max: 5000
+          unit_of_measurement: g
+          mode: box
+    meal:
+      required: false
+      selector:
+        select:
+          translation_key: meal
+          options:
+            - breakfast
+            - lunch
+            - dinner
+            - snack
+    date:
+      required: false
+      selector:
+        date:
+    person:
+      required: false
+      selector:
+        entity:
+          domain: person
+sync_mealie:

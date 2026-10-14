@@ -1,7 +1,11 @@
 import hashlib
 import hmac
+import json
 import os
+import re
 import secrets
+import threading
+import time
 from contextlib import asynccontextmanager
 from datetime import date as Date, timedelta
 
@@ -13,7 +17,7 @@ from starlette.responses import FileResponse, JSONResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from . import ai, db, sources
+from . import ai, db, ingredients, mealie, sources
 
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 MEALS = ("breakfast", "lunch", "dinner", "snack")
@@ -38,7 +42,43 @@ def check_pw(pw: str, stored: str) -> bool:
         return False
 
 
+# When Matkoll runs inside Home Assistant, the integration calls it in-process and says who the HA user is.
+# The secret is generated per start and never leaves the HA process, so the header can't be forged from outside.
+TRUSTED_SECRET: str | None = None
+
+
+def ha_user(request: Request):
+    if not TRUSTED_SECRET or not hmac.compare_digest(request.headers.get("x-matkoll-secret", ""), TRUSTED_SECRET):
+        return None
+    try:
+        info = json.loads(request.headers.get("x-matkoll-ha-user", ""))
+        ha_id, name, admin = str(info["id"]), str(info.get("name") or "Home Assistant user"), bool(info.get("admin"))
+    except (ValueError, KeyError, TypeError):
+        raise HTTPException(401, "Unknown Home Assistant user")
+    return ensure_ha_user(ha_id, name, admin)
+
+
+def ensure_ha_user(ha_id: str, name: str, admin: bool):
+    """The Matkoll account for a Home Assistant user, created on first use."""
+    u = db.q1("SELECT * FROM users WHERE ha_user_id=?", (ha_id,))
+    if not u:
+        base, n, username = name[:40], 1, name[:40]
+        while db.q1("SELECT id FROM users WHERE username=?", (username,)):
+            n += 1
+            username = f"{base[:36]} {n}"
+        uid = db.run("INSERT INTO users (username, pw_hash, is_admin, ha_user_id) VALUES (?, '!', ?, ?)",
+                     (username, 1 if admin else 0, ha_id))
+        u = db.q1("SELECT * FROM users WHERE id=?", (uid,))
+    elif bool(u["is_admin"]) != admin:
+        db.run("UPDATE users SET is_admin=? WHERE id=?", (1 if admin else 0, u["id"]))
+        u["is_admin"] = 1 if admin else 0
+    return u
+
+
 def current_user(request: Request):
+    u = ha_user(request)
+    if u:
+        return u
     token = request.cookies.get(COOKIE)
     if not token:
         raise HTTPException(401, "Not signed in")
@@ -56,7 +96,9 @@ def admin_user(request: Request):
 
 
 def public_user(u):
-    return {k: u[k] for k in ("id", "username", "is_admin", "kcal_goal", "protein_goal", "carbs_goal", "fat_goal")}
+    out = {k: u[k] for k in ("id", "username", "is_admin", "kcal_goal", "protein_goal", "carbs_goal", "fat_goal")}
+    out["home_assistant"] = bool(u.get("ha_user_id")) and TRUSTED_SECRET is not None
+    return out
 
 
 async def body(request: Request) -> dict:
@@ -483,8 +525,11 @@ def recipe_save(recipe_id, d, user_id):
     final = num(final, "Cooked weight", 1) if final not in (None, "", 0, "0") else None
     c = db.conn()
     if recipe_id is None:
-        recipe_id = c.execute("INSERT INTO recipes (name, notes, servings, final_weight_g, created_by) "
-                              "VALUES (?,?,?,?,?)", (name, d.get("notes") or "", servings, final, user_id)).lastrowid
+        recipe_id = c.execute(
+            "INSERT INTO recipes (name, notes, servings, final_weight_g, created_by, source_url, mealie_id, mealie_slug) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (name, d.get("notes") or "", servings, final, user_id, d.get("source_url") or None,
+             d.get("mealie_id") or None, d.get("mealie_slug") or None)).lastrowid
     else:
         c.execute("UPDATE recipes SET name=?, notes=?, servings=?, final_weight_g=?, updated=datetime('now') "
                   "WHERE id=?", (name, d.get("notes") or "", servings, final, recipe_id))
@@ -506,6 +551,12 @@ def recipe_save(recipe_id, d, user_id):
                           "source": "recipe", "source_id": f"r{recipe_id}", "created_by": user_id})
     db.run("UPDATE recipes SET food_id=? WHERE id=?", (fid, recipe_id))
     refresh_parents(fid)
+    mealie_id = db.q1("SELECT mealie_id FROM recipes WHERE id=?", (recipe_id,))["mealie_id"]
+    if mealie_id:
+        placeholder = db.q1("SELECT id FROM foods WHERE source='mealie' AND source_id=?", (mealie_id,))
+        if placeholder:
+            db.run("UPDATE plan SET food_id=?, grams=? WHERE food_id=?",
+                   (fid, calc["serving_g"] or 300, placeholder["id"]))
     return recipe_calc(recipe_id)
 
 
@@ -526,7 +577,7 @@ def refresh_parents(food_id, seen=None):
 
 async def recipes_list(request: Request):
     current_user(request)
-    rows = db.q("""SELECT r.id, r.name, r.servings, r.food_id, f.kcal AS kcal_per100, f.serving_g,
+    rows = db.q("""SELECT r.id, r.name, r.servings, r.food_id, f.kcal AS kcal_per100, f.serving_g, r.mealie_slug, r.source_url,
                           (SELECT COUNT(*) FROM recipe_items WHERE recipe_id = r.id) AS n_items
                    FROM recipes r LEFT JOIN foods f ON f.id = r.food_id ORDER BY r.updated DESC""")
     return JSONResponse(rows)
@@ -572,7 +623,7 @@ async def plan_get(request: Request):
     start = valid_date(request.query_params.get("start") or Date.today().isoformat())
     days = min(int(request.query_params.get("days", 7)), 31)
     end = (Date.fromisoformat(start) + timedelta(days=days - 1)).isoformat()
-    rows = db.q(f"""SELECT p.id AS plan_id, p.date, p.meal, p.grams, p.note, u.username AS added_by, {FOOD_COLS}, f.id AS food_id
+    rows = db.q(f"""SELECT p.id AS plan_id, p.date, p.meal, p.grams, p.note, p.origin, u.username AS added_by, {FOOD_COLS}, f.id AS food_id
                     FROM plan p JOIN foods f ON f.id = p.food_id LEFT JOIN users u ON u.id = p.created_by
                     WHERE p.date BETWEEN ? AND ? ORDER BY p.date, p.id""", (start, end))
     out = {}
@@ -580,10 +631,11 @@ async def plan_get(request: Request):
         d = (Date.fromisoformat(start) + timedelta(days=i)).isoformat()
         out[d] = {m: [] for m in MEALS}
     for r in rows:
-        out[r["date"]][r["meal"]].append({"id": r["plan_id"], "grams": r["grams"], "note": r["note"],
+        out[r["date"]][r["meal"]].append({"id": r["plan_id"], "grams": r["grams"], "note": r["note"], "meal": r["meal"],
+                                          "origin": r["origin"],
                                           "added_by": r["added_by"], "food": food_out({**r, "id": r["food_id"]}),
                                           **scaled(r, r["grams"])})
-    return JSONResponse({"start": start, "days": out})
+    return JSONResponse({"start": start, "days": out, "mealie": mealie.configured() and mealie.config()["sync"]})
 
 
 async def plan_create(request: Request):
@@ -593,6 +645,7 @@ async def plan_create(request: Request):
     pid = db.run("INSERT INTO plan (date, meal, food_id, grams, note, created_by) VALUES (?,?,?,?,?,?)",
                  (valid_date(d.get("date")), valid_meal(d.get("meal")), d["food_id"],
                   num(d.get("grams"), "Amount", 0.1), (d.get("note") or "")[:200], u["id"]))
+    in_background(mealie_push_item, pid)
     return JSONResponse({"id": pid})
 
 
@@ -605,12 +658,17 @@ async def plan_update(request: Request):
     db.run("UPDATE plan SET date=?, meal=?, grams=?, note=? WHERE id=?",
            (valid_date(d.get("date", p["date"])), valid_meal(d.get("meal", p["meal"])),
             num(d.get("grams", p["grams"]), "Amount", 0.1), (d.get("note", p["note"]) or "")[:200], p["id"]))
+    if p["mealie_id"] and (d.get("date", p["date"]) != p["date"] or d.get("meal", p["meal"]) != p["meal"]):
+        in_background(mealie_repush_item, p["id"], p["mealie_id"])
     return JSONResponse({"ok": True})
 
 
 async def plan_delete(request: Request):
     current_user(request)
+    p = db.q1("SELECT * FROM plan WHERE id=?", (request.path_params["id"],))
     db.run("DELETE FROM plan WHERE id=?", (request.path_params["id"],))
+    if p and p["mealie_id"]:
+        in_background(mealie_delete_entry, p["mealie_id"])
     return JSONResponse({"ok": True})
 
 
@@ -634,6 +692,327 @@ async def plan_log(request: Request):
         db.run("INSERT INTO entries (user_id, date, meal, food_id, grams) VALUES (?,?,?,?,?)",
                (u["id"], r["date"], r["meal"], r["food_id"], g))
     return JSONResponse({"logged": len(rows)})
+
+
+# ---------------------------------------------------------------- Mealie meal plan sync (both ways)
+
+MEAL_TO_MEALIE = {"breakfast": "breakfast", "lunch": "lunch", "dinner": "dinner", "snack": "snack"}
+MEALIE_TO_MEAL = {"breakfast": "breakfast", "lunch": "lunch", "dinner": "dinner", "snack": "snack",
+                  "side": "dinner", "dessert": "dinner", "drink": "snack"}
+sync_status = {"state": "idle", "last": None, "error": None, "pulled": 0, "pushed": 0, "removed": 0}
+_sync_lock = threading.Lock()
+
+
+def in_background(fn, *args):
+    def run():
+        try:
+            fn(*args)
+        except Exception as e:  # noqa: BLE001 - best effort; the periodic sync retries
+            sync_status["error"] = str(e)
+    threading.Thread(target=run, daemon=True).start()
+
+
+def _sync_on():
+    return mealie.configured() and mealie.config()["sync"]
+
+
+def mealie_push_item(plan_id):
+    """Sends one Matkoll plan item to Mealie, as a recipe link when the dish came from Mealie."""
+    if not _sync_on():
+        return
+    p = db.q1("SELECT p.*, f.name, f.source, f.source_id FROM plan p JOIN foods f ON f.id = p.food_id WHERE p.id=?",
+              (plan_id,))
+    if not p or p["mealie_id"]:
+        return
+    recipe_id = None
+    if p["source"] == "recipe":
+        r = db.q1("SELECT mealie_id FROM recipes WHERE food_id=?", (p["food_id"],))
+        recipe_id = r["mealie_id"] if r else None
+    elif p["source"] == "mealie":
+        recipe_id = p["source_id"]
+    mid = mealie.create_mealplan(p["date"], MEAL_TO_MEALIE[p["meal"]], recipe_id=recipe_id,
+                                 title="" if recipe_id else p["name"],
+                                 text="" if recipe_id else f"{round(p['grams'])} g per person")
+    if mid is not None:
+        db.run("UPDATE plan SET mealie_id=? WHERE id=?", (mid, plan_id))
+
+
+def mealie_repush_item(plan_id, old_mealie_id):
+    mealie_delete_entry(old_mealie_id)
+    db.run("UPDATE plan SET mealie_id=NULL, origin='matkoll' WHERE id=?", (plan_id,))
+    mealie_push_item(plan_id)
+
+
+def mealie_delete_entry(mealie_id):
+    if _sync_on():
+        try:
+            mealie.delete_mealplan(mealie_id)
+        except mealie.MealieError as e:
+            if "404" not in str(e):
+                raise
+
+
+def _mealie_entry_food(entry):
+    """Finds or creates the food a Mealie plan entry stands for. Returns (food_id, grams per person)."""
+    recipe_id = mealie.g(entry, "recipeId", "recipe_id")
+    if recipe_id:
+        r = db.q1("SELECT r.food_id, f.serving_g FROM recipes r JOIN foods f ON f.id = r.food_id WHERE r.mealie_id=?",
+                  (str(recipe_id),))
+        if r:
+            return r["food_id"], r["serving_g"] or 300
+        f = db.q1("SELECT id, serving_g FROM foods WHERE source='mealie' AND source_id=?", (str(recipe_id),))
+        if f:
+            return f["id"], f["serving_g"] or 100
+        summary = mealie.g(entry, "recipe") or {}
+        name = mealie.g(summary, "name", default="Recipe from Mealie")
+        nutrition = None
+        slug = mealie.g(summary, "slug")
+        if slug:
+            try:
+                nutrition = mealie.nutrition_per_serving(mealie.get_recipe(slug))
+            except mealie.MealieError:
+                pass
+        # Not imported into Matkoll yet: one Mealie portion stands in as "100 g", using Mealie's own
+        # nutrition per serving when it has any. Importing the recipe gives exact numbers.
+        fid = db.upsert_food({
+            "name": f"{name} (1 portion)", "brand": "Mealie – import for exact calories",
+            **{k: (nutrition or {}).get(k) or 0 for k in db.NUTRIENTS},
+            "serving_g": 100, "source": "mealie", "source_id": str(recipe_id),
+        })
+        return fid, 100
+    title = (mealie.g(entry, "title", default="") or "Meal from Mealie").strip()
+    fid = db.upsert_food({"name": title, "brand": "Mealie note", "serving_g": 100,
+                          "source": "mealie", "source_id": "note:" + title.lower()[:80]})
+    return fid, 100
+
+
+def mealie_sync(start: str, end: str):
+    """Pulls Mealie's plan into Matkoll's, removes what was deleted there, then pushes Matkoll-only items."""
+    if not mealie.configured():
+        raise mealie.MealieError("Mealie isn't connected.")
+    with _sync_lock:
+        sync_status.update(state="running", error=None)
+        pulled = pushed = removed = 0
+        try:
+            entries = mealie.mealplans(start, end)
+            seen = set()
+            for e in entries:
+                eid = mealie.g(e, "id")
+                if eid is None:
+                    continue
+                seen.add(int(eid))
+                day = str(mealie.g(e, "date", default=""))[:10]
+                meal = MEALIE_TO_MEAL.get(mealie.g(e, "entryType", "entry_type", default="dinner"), "dinner")
+                existing = db.q1("SELECT * FROM plan WHERE mealie_id=?", (int(eid),))
+                if existing:
+                    if existing["date"] != day or existing["meal"] != meal:
+                        db.run("UPDATE plan SET date=?, meal=? WHERE id=?", (day, meal, existing["id"]))
+                    continue
+                food_id, grams = _mealie_entry_food(e)
+                db.run("INSERT INTO plan (date, meal, food_id, grams, note, mealie_id, origin) "
+                       "VALUES (?,?,?,?,?,?, 'mealie')",
+                       (day, meal, food_id, grams, (mealie.g(e, "text", default="") or "")[:200], int(eid)))
+                pulled += 1
+            for r in db.q("SELECT id, mealie_id FROM plan WHERE mealie_id IS NOT NULL AND date BETWEEN ? AND ?",
+                          (start, end)):
+                if r["mealie_id"] not in seen:
+                    db.run("DELETE FROM plan WHERE id=?", (r["id"],))
+                    removed += 1
+            if mealie.config()["sync"]:
+                for r in db.q("SELECT id FROM plan WHERE mealie_id IS NULL AND origin='matkoll' "
+                              "AND date BETWEEN ? AND ?", (start, end)):
+                    mealie_push_item(r["id"])
+                    pushed += 1
+            sync_status.update(state="done", last=time.strftime("%Y-%m-%d %H:%M"),
+                               pulled=pulled, pushed=pushed, removed=removed)
+        except Exception as e:
+            sync_status.update(state="error", error=str(e))
+            raise
+    return dict(sync_status)
+
+
+def _sync_window():
+    today = Date.today()
+    return (today - timedelta(days=7)).isoformat(), (today + timedelta(days=28)).isoformat()
+
+
+_stop = threading.Event()
+
+
+def _sync_loop():
+    while not _stop.wait(60):
+        try:
+            if _sync_on() and time.time() - _sync_loop.last >= 15 * 60:
+                _sync_loop.last = time.time()
+                mealie_sync(*_sync_window())
+        except Exception:  # noqa: BLE001 - shown in settings via sync_status
+            pass
+
+
+_sync_loop.last = 0
+
+
+async def mealie_sync_now(request: Request):
+    current_user(request)
+    try:
+        st = await run_in_threadpool(mealie_sync, *_sync_window())
+    except mealie.MealieError as e:
+        raise HTTPException(400, str(e))
+    return JSONResponse(st)
+
+
+async def mealie_status(request: Request):
+    current_user(request)
+    c = mealie.config()
+    return JSONResponse({"configured": mealie.configured(), "sync": c["sync"], "url": c["url"], "status": sync_status})
+
+
+async def mealie_check(request: Request):
+    admin_user(request)
+    try:
+        return JSONResponse(await run_in_threadpool(mealie.check))
+    except mealie.MealieError as e:
+        raise HTTPException(400, str(e))
+
+
+# ---------------------------------------------------------------- recipe import (links and Mealie)
+
+def find_matches(name: str, user_id: int, limit=6):
+    found = []
+    for term in ingredients.search_terms(name):
+        for f in local_search(term, user_id, limit=limit, sources_filter=("slv", "custom", "recipe", "off", "usda")):
+            if f["id"] not in {x["id"] for x in found}:
+                found.append(f)
+        if len(found) >= 3:
+            break
+    return found[:limit]
+
+
+def build_import(name, servings, lines, user_id, **meta):
+    """lines: [{text, food?, qty?, unit?}] -> review data with gram estimates and food suggestions."""
+    items = []
+    for ln in lines:
+        text = (ln.get("text") or "").strip()
+        if ln.get("food"):
+            q = ln.get("qty")
+            guess = f"{q if q else ''} {ln.get('unit') or ''} {ln['food']}".strip() if (q or ln.get("unit")) else text
+            parsed = ingredients.parse_line(guess or ln["food"])
+            parsed["name"] = ln["food"]
+            parsed["line"] = text or parsed["line"]
+        else:
+            if not text:
+                continue
+            parsed = ingredients.parse_line(text)
+        if not parsed["name"]:
+            continue
+        matches = find_matches(parsed["name"], user_id)
+        items.append({**parsed, "matches": matches, "food_id": matches[0]["id"] if matches else None,
+                      "skip": ingredients.is_negligible(parsed["name"])})
+    try:
+        servings = max(1, int(float(servings))) if servings else 4
+    except (TypeError, ValueError):
+        servings = 4
+    return {"name": name or "Imported recipe", "servings": servings, "items": items, **meta}
+
+
+def _walk_ld(node):
+    if isinstance(node, list):
+        for x in node:
+            yield from _walk_ld(x)
+    elif isinstance(node, dict):
+        yield node
+        for key in ("@graph", "mainEntity", "itemListElement"):
+            if key in node:
+                yield from _walk_ld(node[key])
+
+
+def extract_recipe(html: str):
+    """Finds schema.org Recipe data (JSON-LD), which most recipe sites publish for search engines."""
+    for m in re.finditer(r"<script[^>]*application/ld\+json[^>]*>(.*?)</script>", html, re.S | re.I):
+        try:
+            data = json.loads(m.group(1).strip())
+        except ValueError:
+            continue
+        for node in _walk_ld(data):
+            t = node.get("@type")
+            if "Recipe" in (t if isinstance(t, list) else [t]):
+                return node
+    return None
+
+
+def _servings_from(y):
+    if isinstance(y, list):
+        y = next((v for v in y if v), None)
+    m = re.search(r"\d+", str(y or ""))
+    return int(m.group(0)) if m else None
+
+
+def _import_mealie_recipe(slug, user_id, source_url=None):
+    rec = mealie.get_recipe(slug)
+    servings = mealie.g(rec, "recipeServings", "recipe_servings") or \
+        mealie.g(rec, "recipeYieldQuantity", "recipe_yield_quantity") or \
+        _servings_from(mealie.g(rec, "recipeYield", "recipe_yield"))
+    return build_import(mealie.g(rec, "name"), servings, mealie.ingredient_lines(rec), user_id,
+                        mealie_id=str(mealie.g(rec, "id") or ""), mealie_slug=mealie.g(rec, "slug", default=slug),
+                        source_url=source_url or mealie.g(rec, "orgURL", "org_url"),
+                        nutrition=mealie.nutrition_per_serving(rec))
+
+
+async def import_url(request: Request):
+    u = current_user(request)
+    d = await body(request)
+    url = (d.get("url") or "").strip()
+    if not re.match(r"^https?://", url):
+        raise HTTPException(400, "Paste the full link to the recipe page, starting with https://")
+    if d.get("via_mealie") and mealie.configured():
+        try:
+            slug = await run_in_threadpool(mealie.create_from_url, url)
+            return JSONResponse(await run_in_threadpool(_import_mealie_recipe, slug, u["id"], url))
+        except mealie.MealieError as e:
+            raise HTTPException(400, str(e))
+
+    def fetch():
+        import requests
+        r = requests.get(url, timeout=20, headers={
+            "User-Agent": "Mozilla/5.0 (compatible; Matkoll/1.0; recipe import)",
+            "Accept-Language": "sv-SE,sv;q=0.9,en;q=0.8"})
+        r.raise_for_status()
+        return r.text
+    try:
+        html = await run_in_threadpool(fetch)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, f"Couldn't open that page: {e}")
+    rec = extract_recipe(html)
+    if not rec or not rec.get("recipeIngredient"):
+        hint = " Turn on 'Save in Mealie too' and Mealie will read it instead." if mealie.configured() else ""
+        raise HTTPException(400, "Couldn't find a recipe on that page." + hint)
+    n = rec.get("nutrition") or {}
+    nutrition = None
+    if n.get("calories"):
+        m = re.search(r"\d+(?:[.,]\d+)?", str(n["calories"]))
+        nutrition = {"kcal": float(m.group(0).replace(",", "."))} if m else None
+    lines = [{"text": re.sub(r"<[^>]+>", "", str(x))} for x in rec.get("recipeIngredient") or []]
+    return JSONResponse(build_import(rec.get("name"), _servings_from(rec.get("recipeYield")), lines, u["id"],
+                                     source_url=url, nutrition=nutrition))
+
+
+async def mealie_recipes(request: Request):
+    current_user(request)
+    try:
+        return JSONResponse(await run_in_threadpool(mealie.list_recipes, request.query_params.get("q", "")))
+    except mealie.MealieError as e:
+        raise HTTPException(400, str(e))
+
+
+async def mealie_import(request: Request):
+    u = current_user(request)
+    d = await body(request)
+    if not d.get("slug"):
+        raise HTTPException(400, "Pick a recipe")
+    try:
+        return JSONResponse(await run_in_threadpool(_import_mealie_recipe, d["slug"], u["id"]))
+    except mealie.MealieError as e:
+        raise HTTPException(400, str(e))
 
 
 # ---------------------------------------------------------------- photo logging
@@ -695,10 +1074,13 @@ async def settings_get(request: Request):
     out = {"photo_providers": ai.available(cfg), "default_provider": cfg["ai_provider"],
            "slv": {**sources.slv_status, "imported": db.get_setting("slv_imported"),
                    "count": db.q1("SELECT COUNT(*) AS n FROM foods WHERE source='slv'")["n"]}}
+    mc = mealie.config()
+    out["mealie"] = {"configured": mealie.configured(), "sync": mc["sync"], "status": sync_status}
     if u["is_admin"]:
         out["ai"] = {k: ("••••" + v[-4:] if k in ai.SECRET_KEYS and v else v) for k, v in cfg.items()}
         key = db.get_setting("usda_api_key") or os.environ.get("USDA_API_KEY") or ""
         out["usda_api_key"] = "••••" + key[-4:] if key else ""
+        out["mealie"].update(url=mc["url"], token="••••" + mc["token"][-4:] if mc["token"] else "")
     return JSONResponse(out)
 
 
@@ -715,6 +1097,15 @@ async def settings_update(request: Request):
             db.set_setting(k, v)
     if "usda_api_key" in d and not str(d["usda_api_key"]).startswith("••••"):
         db.set_setting("usda_api_key", str(d["usda_api_key"] or "").strip())
+    if "mealie_url" in d:
+        url = str(d["mealie_url"] or "").strip().rstrip("/")
+        if url and not re.match(r"^https?://", url):
+            url = "http://" + url
+        db.set_setting("mealie_url", url)
+    if "mealie_token" in d and not str(d["mealie_token"]).startswith("••••"):
+        db.set_setting("mealie_token", str(d["mealie_token"] or "").strip())
+    if "mealie_sync" in d:
+        db.set_setting("mealie_sync", "1" if d["mealie_sync"] in (True, "1", "on", 1) else "0")
     return await settings_get(request)
 
 
@@ -752,6 +1143,78 @@ async def export_csv(request: Request):
                     headers={"Content-Disposition": f'attachment; filename="matkoll-{u["username"]}.csv"'})
 
 
+# ---------------------------------------------------------------- used by the Home Assistant integration
+
+def summary_all(day: str | None = None):
+    """Today's totals and goals for every user, for Home Assistant sensors."""
+    day = day or Date.today().isoformat()
+    users = db.q("SELECT * FROM users ORDER BY id")
+    totals = {r["user_id"]: r for r in db.q(
+        """SELECT e.user_id, SUM(f.kcal*e.grams/100) AS kcal, SUM(f.protein*e.grams/100) AS protein,
+                  SUM(f.carbs*e.grams/100) AS carbs, SUM(f.fat*e.grams/100) AS fat,
+                  SUM(f.fiber*e.grams/100) AS fiber, COUNT(*) AS entries
+           FROM entries e JOIN foods f ON f.id = e.food_id WHERE e.date = ? GROUP BY e.user_id""", (day,))}
+    out = []
+    for u in users:
+        t = totals.get(u["id"], {})
+        kcal = round(t.get("kcal") or 0)
+        out.append({
+            "id": u["id"], "username": u["username"], "ha_user_id": u.get("ha_user_id"),
+            "kcal": kcal, "kcal_goal": u["kcal_goal"], "kcal_left": round(u["kcal_goal"] - kcal),
+            **{k: round(t.get(k) or 0, 1) for k in ("protein", "carbs", "fat", "fiber")},
+            "protein_goal": u["protein_goal"], "carbs_goal": u["carbs_goal"], "fat_goal": u["fat_goal"],
+            "entries": t.get("entries") or 0,
+        })
+    return {"date": day, "users": out, "plan": plan_range(day, day)}
+
+
+def plan_range(start: str, end: str):
+    """Planned meals between two dates (inclusive), for the Home Assistant calendar."""
+    rows = db.q("""SELECT p.id, p.date, p.meal, p.grams, p.note, p.origin, f.name, f.kcal
+                   FROM plan p JOIN foods f ON f.id = p.food_id
+                   WHERE p.date BETWEEN ? AND ? ORDER BY p.date, p.id""", (start, end))
+    return [{**r, "kcal": round(r["kcal"] * r["grams"] / 100)} for r in rows]
+
+
+def default_meal_now():
+    h = time.localtime().tm_hour
+    return "breakfast" if h < 10 else "lunch" if h < 14 else "snack" if h < 17 else "dinner" if h < 21 else "snack"
+
+
+def log_food_for(user_id: int, food: str, grams: float, meal: str | None = None, day: str | None = None):
+    """Logs food by name or barcode, e.g. from a Home Assistant action or voice. Returns what was logged."""
+    if grams is None or float(grams) <= 0:
+        raise ValueError("Amount must be more than 0 grams")
+    food = (food or "").strip()
+    if not food:
+        raise ValueError("Say which food to log")
+    digits = "".join(ch for ch in food if ch.isdigit())
+    f = None
+    if len(digits) >= 8 and len(digits) == len(food.replace(" ", "")):
+        f = db.q1("SELECT * FROM foods WHERE barcode=? LIMIT 1", (digits,))
+        if not f:
+            found, _ = sources.off_barcode(digits)
+            if found:
+                f = db.q1("SELECT * FROM foods WHERE id=?", (db.upsert_food(found),))
+    if not f:
+        matches = local_search(food, user_id, limit=1)
+        if not matches:
+            for term in ingredients.search_terms(food):
+                matches = local_search(term, user_id, limit=1)
+                if matches:
+                    break
+        if not matches:
+            raise ValueError(f"No food matching '{food}'")
+        f = db.q1("SELECT * FROM foods WHERE id=?", (matches[0]["id"],))
+    meal = meal or default_meal_now()
+    if meal not in MEALS:
+        raise ValueError(f"Meal must be one of {', '.join(MEALS)}")
+    day = day or Date.today().isoformat()
+    db.run("INSERT INTO entries (user_id, date, meal, food_id, grams) VALUES (?,?,?,?,?)",
+           (user_id, day, meal, f["id"], float(grams)))
+    return {"food": f["name"], "grams": float(grams), "meal": meal, "date": day, **scaled(f, float(grams))}
+
+
 # ---------------------------------------------------------------- app
 
 async def index(request: Request):
@@ -771,12 +1234,23 @@ async def http_error(request: Request, exc: HTTPException):
     return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
 
 
-@asynccontextmanager
-async def lifespan(app):
+def startup():
     db.init()
     if os.environ.get("AUTO_IMPORT_SLV", "1") == "1" and not db.get_setting("slv_imported"):
         sources.start_slv_import()
+    _stop.clear()
+    threading.Thread(target=_sync_loop, daemon=True, name="matkoll-mealie-sync").start()
+
+
+def shutdown():
+    _stop.set()
+
+
+@asynccontextmanager
+async def lifespan(app):
+    startup()
     yield
+    shutdown()
 
 
 I = "{id:int}"
@@ -817,6 +1291,12 @@ routes = [
     Route("/api/plan/log", plan_log, methods=["POST"]),
     Route(f"/api/plan/{I}", plan_update, methods=["PUT"]),
     Route(f"/api/plan/{I}", plan_delete, methods=["DELETE"]),
+    Route("/api/import/url", import_url, methods=["POST"]),
+    Route("/api/mealie/status", mealie_status),
+    Route("/api/mealie/check", mealie_check),
+    Route("/api/mealie/recipes", mealie_recipes),
+    Route("/api/mealie/import", mealie_import, methods=["POST"]),
+    Route("/api/mealie/sync", mealie_sync_now, methods=["POST"]),
     Route("/api/photo/analyze", photo_analyze, methods=["POST"]),
     Route("/api/photo/log", photo_log, methods=["POST"]),
     Route("/api/settings", settings_get),
