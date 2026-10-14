@@ -21,6 +21,12 @@ public class MatkollNativePlugin: CAPPlugin, CAPBridgedPlugin {
 
     private let healthStore = HKHealthStore()
 
+    /// False when the app was built without the Apple Health entitlement (HEALTH=0),
+    /// e.g. for a free Apple ID that can't sign HealthKit.
+    private var healthBuiltIn: Bool {
+        (Bundle.main.object(forInfoDictionaryKey: "MatkollHealth") as? Bool ?? false) && HKHealthStore.isHealthDataAvailable()
+    }
+
     // MARK: - Barcode scanning
 
     @objc func scanBarcode(_ call: CAPPluginCall) {
@@ -78,11 +84,11 @@ public class MatkollNativePlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func healthAvailable(_ call: CAPPluginCall) {
-        call.resolve(["available": HKHealthStore.isHealthDataAvailable()])
+        call.resolve(["available": healthBuiltIn])
     }
 
     @objc func healthRequest(_ call: CAPPluginCall) {
-        guard HKHealthStore.isHealthDataAvailable() else {
+        guard healthBuiltIn else {
             call.reject("Apple Health isn't available on this device.", "unavailable")
             return
         }
@@ -101,7 +107,7 @@ public class MatkollNativePlugin: CAPPlugin, CAPBridgedPlugin {
     /// Writes one day's totals. Each value gets a stable sync identifier per user and day,
     /// so saving the same day again replaces the earlier sample instead of adding to it.
     @objc func healthSaveDay(_ call: CAPPluginCall) {
-        guard HKHealthStore.isHealthDataAvailable() else {
+        guard healthBuiltIn else {
             call.reject("Apple Health isn't available on this device.", "unavailable")
             return
         }

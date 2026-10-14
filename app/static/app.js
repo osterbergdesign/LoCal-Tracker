@@ -1013,7 +1013,7 @@ async function renderSettings() {
     </form>
     ${NATIVE ? `<section class="section" data-native-settings>
       <h2>iPhone app</h2>
-      <label class="row" style="justify-content:space-between;margin:12px 0">
+      <label class="row hidden" style="justify-content:space-between;margin:12px 0" data-health-row>
         <span>Save to Apple Health<br><span class="small muted">Your daily calories, protein, carbs, fat and fibre</span></span>
         <input type="checkbox" data-health style="flex:0;width:26px;min-height:26px">
       </label>
@@ -1035,6 +1035,7 @@ async function renderSettings() {
   };
   const healthBox = $("[data-health]", root);
   if (healthBox) {
+    native("healthAvailable").then((r) => { if (r?.available) $("[data-health-row]", root).classList.remove("hidden"); }).catch(() => {});
     healthBox.checked = healthEnabled();
     healthBox.onchange = async () => {
       if (healthBox.checked) {

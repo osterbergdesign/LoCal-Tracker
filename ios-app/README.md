@@ -14,7 +14,7 @@ You only need to rebuild the app when something in this `ios-app` folder changes
 
 - A Mac with **Xcode 26** or newer (free from the App Store). Open it once after installing so it can finish setting up.
 - **Node.js 22** or newer: download the LTS installer from [nodejs.org](https://nodejs.org).
-- An Apple Developer account to sign the app. A friend's works: see step 3.
+- An Apple ID. Your normal one works (free); a paid Apple Developer account ($99/year) only removes the weekly reinstall. See step 3.
 
 ## 1. Get the code
 
@@ -35,35 +35,54 @@ npm run ios:create
 npm run ios:open
 ```
 
-## 3. Sign it with your friend's developer account
+## 3. Sign it
 
-Your friend adds you to their team once:
+### With your own Apple ID (free)
 
-1. In [App Store Connect](https://appstoreconnect.apple.com) → **Users and Access**, they invite your Apple ID with the **App Manager** role (or Admin), and tick **Access to Certificates, Identifiers & Profiles**.
-2. You accept the email invitation.
-
-Then on your Mac:
-
-1. **Xcode → Settings → Accounts**: add your Apple ID. Your friend's team appears under it.
+1. **Xcode → Settings → Accounts**: click **+** and sign in with your Apple ID. It shows up as "Your Name (Personal Team)".
 2. In the project navigator, click **App**, then the **App** target → **Signing & Capabilities**.
-3. Tick **Automatically manage signing** and choose your friend's team under **Team**.
-4. **Bundle Identifier** is `se.osterbergdesign.matkoll`. If Xcode says it's taken, change the end to something unique, e.g. `se.osterbergdesign.matkoll.home`.
-5. **HealthKit** should be listed among the capabilities. If it isn't, click **+ Capability** and add **HealthKit**.
+3. Tick **Automatically manage signing** and pick your **Personal Team**.
+4. Change **Bundle Identifier** to something only you use, e.g. `se.osterbergdesign.matkoll.yourname`.
+5. If Xcode shows a signing error that mentions **HealthKit**, your free account can't sign Apple Health. Build without it and everything else still works:
+   ```bash
+   HEALTH=0 npm run ios:sync
+   ```
 
-## 4. Put it on your phones
+What a free Apple ID means:
 
-The simplest way for a household is to install straight from the Mac. Each phone needs this once:
+- **The app stops opening after 7 days.** Connect the phone (or have it on the same Wi-Fi, see below) and press **Run** again. Nothing is lost: your data lives on your server.
+- At most 3 apps installed this way per phone.
 
-1. On the iPhone: **Settings → Privacy & Security → Developer Mode** → on (the phone restarts). The option appears after the phone has been connected to Xcode once.
-2. Connect the iPhone to the Mac with a cable and tap **Trust** on the phone.
-3. In Xcode's toolbar, pick the iPhone as the run destination and press **Run** (▶).
-4. If the phone says the developer isn't trusted: **Settings → General → VPN & Device Management** → tap the developer → **Trust**.
+### With a paid developer account
 
-Apps installed this way keep working for about a year, until the signing profile expires. Then press Run again.
+Signing lasts a year instead of 7 days, and TestFlight becomes possible. If it's someone else's account, they invite your Apple ID in [App Store Connect](https://appstoreconnect.apple.com) → **Users and Access** with the **App Manager** role and **Access to Certificates, Identifiers & Profiles** ticked. Then pick their team in step 3 instead of your Personal Team.
 
-### Or through TestFlight
+## 4. Put it on your phone
 
-Better if family members aren't near the Mac. In Xcode: **Product → Archive**, then **Distribute App → TestFlight & App Store**. The app needs a record in App Store Connect first (**Apps → + → New App**, with the same bundle identifier). Internal testers must be members of your friend's team; each TestFlight build lasts 90 days. `npm run ios:sync` raises the build number automatically, which TestFlight requires for every upload.
+1. Connect the iPhone to the Mac with a cable and tap **Trust** on the phone.
+2. In Xcode's toolbar, pick the iPhone as the run destination and press **Run** (▶).
+3. On the iPhone: **Settings → Privacy & Security → Developer Mode** → on (the phone restarts), then press **Run** again.
+4. The first time, the phone says the developer isn't trusted: **Settings → General → VPN & Device Management** → tap your Apple ID → **Trust**.
+
+**Reinstalling without a cable:** in Xcode, **Window → Devices and Simulators**, select the phone and tick **Connect via network**. From then on, when the phone and Mac are on the same Wi-Fi, pressing **Run** reinstalls it wirelessly. With a free Apple ID, doing this once a week keeps the app working.
+
+Each family phone gets the same treatment once; with a free Apple ID, every phone needs the weekly Run.
+
+## Sideloading tools (no weekly Mac visit)
+
+[SideStore](https://sidestore.io) and [AltStore](https://altstore.io) install apps signed with your own free Apple ID, like Xcode does, but refresh them in the background so the 7-day limit takes care of itself (AltStore refreshes over Wi-Fi from AltServer on your Mac; SideStore refreshes on the phone itself). They install `.ipa` files, which you build on the Mac:
+
+```bash
+./build-ipa.sh
+```
+
+That writes `build/Matkoll.ipa`, built without Apple Health because these tools can't sign it. AirDrop the file to your phone and open it with SideStore or AltStore. Follow their setup guides first; they need a one-time setup with your Mac. The 3-app limit counts the sideloading tool itself.
+
+Apple's EU alternative app marketplaces (AltStore PAL and others) don't help here: apps in them must still be published by a paid developer account.
+
+### Or through TestFlight (paid account only)
+
+In Xcode: **Product → Archive**, then **Distribute App → TestFlight & App Store**. The app needs a record in App Store Connect first (**Apps → + → New App**, with the same bundle identifier). Internal testers must be members of the developer team; each TestFlight build lasts 90 days. `npm run ios:sync` raises the build number automatically, which TestFlight requires for every upload.
 
 ## Updating the app
 
@@ -74,10 +93,10 @@ cd LoCal-Tracker
 git pull
 cd ios-app
 npm install
-npm run ios:sync
+npm run ios:sync          # or: HEALTH=0 npm run ios:sync
 ```
 
-Then press **Run** in Xcode (or archive a new TestFlight build).
+Then press **Run** in Xcode (or run `./build-ipa.sh` again for SideStore/AltStore).
 
 ## Troubleshooting
 
@@ -85,4 +104,5 @@ Then press **Run** in Xcode (or archive a new TestFlight build).
 - **The app asks for Local Network access**: allow it; that's how it reaches your server on the home network.
 - **Barcode scanner says camera access is off**: **Settings → Matkoll → Camera**.
 - **Nothing appears in Apple Health**: **Health app → Sharing → Apps → Matkoll** and allow writing for Dietary Energy and the nutrients.
-- **Signing errors about HealthKit**: your Apple ID needs the certificates access from step 3, or your friend can enable HealthKit for the bundle identifier at developer.apple.com → Identifiers.
+- **Signing errors about HealthKit**: with a free Apple ID, run `HEALTH=0 npm run ios:sync` and press Run again. With a paid team, your Apple ID needs the certificates access from step 3.
+- **"Maximum number of apps" error**: a free Apple ID allows 3 sideloaded apps per phone. Delete one you don't use.

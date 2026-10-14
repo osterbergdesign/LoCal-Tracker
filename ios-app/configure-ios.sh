@@ -26,7 +26,14 @@ set_text NSLocalNetworkUsageDescription "Matkoll connects to your own Matkoll se
 # Your server is usually plain http:// on the home network, which iOS blocks unless allowed.
 plutil -replace NSAppTransportSecurity -json '{"NSAllowsArbitraryLoads":true,"NSAllowsLocalNetworking":true}' "$PLIST"
 
+if [[ "${HEALTH:-1}" == "0" ]]; then
+  say "Apple Health turned off (HEALTH=0)"
+  rm -f "$ENT"
+  perl -0pi -e 's/\n\t+CODE_SIGN_ENTITLEMENTS = App\/App\.entitlements;//g' "$PBX"
+  plutil -replace MatkollHealth -bool false "$PLIST"
+else
 say "Apple Health entitlement"
+plutil -replace MatkollHealth -bool true "$PLIST"
 cat >"$ENT" <<'XML'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -41,6 +48,7 @@ cat >"$ENT" <<'XML'
 XML
 if ! grep -q "CODE_SIGN_ENTITLEMENTS = App/App.entitlements" "$PBX"; then
   perl -0pi -e 's/(\t+)(INFOPLIST_FILE = App\/Info\.plist;)/$1$2\n$1CODE_SIGN_ENTITLEMENTS = App\/App.entitlements;/g' "$PBX"
+fi
 fi
 
 say "Build number"
