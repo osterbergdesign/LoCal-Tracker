@@ -1,4 +1,4 @@
-# Matkoll
+# LoCal
 
 A self-hosted meal planner and calorie tracker for a household. It runs as one small Docker container with a SQLite database, and installs on your phone like an app.
 
