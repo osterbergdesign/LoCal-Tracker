@@ -10,11 +10,14 @@ class LoCalPanel extends HTMLElement {
     this.attachShadow({ mode: "open" });
     this.shadowRoot.innerHTML = `
       <style>
-        :host { display: flex; flex-direction: column; height: 100%; background: var(--primary-background-color); }
+        /* Home Assistant doesn't give panels a fixed height, so fill the viewport ourselves. */
+        :host { display: block; position: relative; height: 100vh; height: 100dvh; overflow: hidden;
+                background: var(--primary-background-color); }
         .bar {
-          display: none; align-items: center; gap: 4px; flex: 0 0 auto;
-          height: var(--header-height, 56px); padding: 0 4px; box-sizing: border-box;
-          padding-top: env(safe-area-inset-top); height: calc(var(--header-height, 56px) + env(safe-area-inset-top));
+          display: none; align-items: center; gap: 4px; box-sizing: border-box;
+          position: absolute; top: 0; left: 0; right: 0;
+          padding: env(safe-area-inset-top) 4px 0;
+          height: calc(var(--header-height, 56px) + env(safe-area-inset-top));
           background: var(--app-header-background-color, var(--primary-color, #03a9f4));
           color: var(--app-header-text-color, var(--text-primary-color, #fff));
           font: 400 20px/1 var(--paper-font-body1_-_font-family, Roboto, system-ui, sans-serif);
@@ -26,7 +29,14 @@ class LoCalPanel extends HTMLElement {
           display: grid; place-items: center; cursor: pointer;
         }
         button:focus-visible { outline: 2px solid currentColor; }
-        iframe { flex: 1 1 auto; width: 100%; border: 0; display: block; background: transparent; }
+        iframe {
+          position: absolute; left: 0; right: 0; bottom: 0; top: 0;
+          width: 100%; height: 100%; border: 0; display: block; background: transparent;
+        }
+        :host([narrow]) iframe {
+          top: calc(var(--header-height, 56px) + env(safe-area-inset-top));
+          height: calc(100% - var(--header-height, 56px) - env(safe-area-inset-top));
+        }
       </style>
       <div class="bar">
         <button aria-label="Open the Home Assistant menu">

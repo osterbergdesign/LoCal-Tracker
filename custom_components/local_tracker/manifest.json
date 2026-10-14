@@ -10,5 +10,5 @@
   "issue_tracker": "https://github.com/osterbergdesign/LoCal-Tracker/issues",
   "requirements": ["starlette>=0.41.0", "python-multipart>=0.0.9"],
   "single_config_entry": true,
-  "version": "1.0.0"
+  "version": "1.0.1"
 }
