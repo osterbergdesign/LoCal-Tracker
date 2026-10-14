@@ -42,7 +42,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
 def _household_device() -> DeviceInfo:
     return DeviceInfo(identifiers={(DOMAIN, "household")}, name="LoCal", manufacturer="LoCal",
-                      entry_type=DeviceEntryType.SERVICE, configuration_url="homeassistant://local-tracker")
+                      entry_type=DeviceEntryType.SERVICE, configuration_url="homeassistant://local_tracker")
 
 
 class LoCalPersonSensor(CoordinatorEntity, SensorEntity):

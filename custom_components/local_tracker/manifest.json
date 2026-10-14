@@ -1,5 +1,5 @@
 {
-  "domain": "local-tracker",
+  "domain": "local_tracker",
   "name": "LoCal",
   "codeowners": ["@osterbergdesign"],
   "config_flow": true,
