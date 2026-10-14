@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Matkoll</title>
+  <link rel="stylesheet" href="setup.css">
+</head>
+<body>
+  <main>
+    <img class="mark" src="icon.svg" alt="">
+    <h1>Can't reach Matkoll</h1>
+    <p class="muted">Couldn't connect to <b id="addr">your server</b>.</p>
+    <p class="muted">Check that your phone is on the home network (or Tailscale, if you use it) and that the Matkoll container is running.</p>
+    <button id="retry">Try again</button>
+    <button class="ghost" id="change">Change server address</button>
+  </main>
+  <script>
+    let saved = "";
+    try { saved = localStorage.getItem("matkoll.server") || ""; } catch {}
+    if (saved) document.getElementById("addr").textContent = saved;
+    document.getElementById("retry").onclick = () => { if (saved) location.replace(saved); else location.replace("index.html?setup=1"); };
+    document.getElementById("change").onclick = () => location.replace("index.html?setup=1");
+  </script>
+</body>
+</html>

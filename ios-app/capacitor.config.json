@@ -1,0 +1,15 @@
+{
+  "appId": "se.osterbergdesign.matkoll",
+  "appName": "Matkoll",
+  "webDir": "www",
+  "server": {
+    "allowNavigation": ["*"],
+    "errorPath": "error.html"
+  },
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#F2F4F3",
+    "allowsLinkPreview": false,
+    "limitsNavigationsToAppBoundDomains": false
+  }
+}

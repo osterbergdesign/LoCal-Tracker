@@ -1,0 +1,22 @@
+{
+  "name": "matkoll-ios",
+  "version": "1.0.0",
+  "private": true,
+  "description": "iPhone app for Matkoll: a native shell around your Matkoll server, with a native barcode scanner and Apple Health sync.",
+  "scripts": {
+    "ios:create": "npx cap add ios && ./configure-ios.sh && npx cap sync ios",
+    "ios:sync": "./configure-ios.sh && npx cap sync ios",
+    "ios:open": "npx cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/core": "^8.5.1",
+    "@capacitor/ios": "^8.5.1",
+    "matkoll-native": "file:./native"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.1"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

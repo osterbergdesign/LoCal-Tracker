@@ -1,0 +1,16 @@
+{
+  "name": "matkoll-native",
+  "version": "1.0.0",
+  "description": "Native barcode scanner and Apple Health sync for the Matkoll iPhone app",
+  "main": "index.js",
+  "license": "MIT",
+  "files": ["index.js", "ios/Sources", "Package.swift", "MatkollNative.podspec"],
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  },
+  "peerDependencies": {
+    "@capacitor/core": ">=8.0.0"
+  }
+}

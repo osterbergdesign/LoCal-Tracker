@@ -3,3 +3,6 @@ data/
 __pycache__/
 *.pyc
 app/static/vendor/
+ios-app/node_modules/
+ios-app/ios/
+ios-app/package-lock.json

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Matkoll</title>
+  <link rel="stylesheet" href="setup.css">
+</head>
+<body>
+  <main id="setup" class="hidden">
+    <img class="mark" src="icon.svg" alt="">
+    <h1>Connect to your Matkoll</h1>
+    <p class="muted">Enter the address you open Matkoll at in the browser. Everyone in the household uses the same address.</p>
+    <form id="form" novalidate>
+      <label for="url">Server address</label>
+      <input id="url" type="url" inputmode="url" autocomplete="url" autocapitalize="none" autocorrect="off" spellcheck="false"
+             placeholder="http://192.168.1.77:8080" required>
+      <p class="hint">Usually http://, the container's IP address and :8080. With HTTPS set up, use that address instead.</p>
+      <p class="error hidden" id="err"></p>
+      <button type="submit">Connect</button>
+    </form>
+  </main>
+  <script src="setup.js"></script>
+</body>
+</html>

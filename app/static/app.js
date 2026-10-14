@@ -8,6 +8,10 @@ const PROVIDER_LABEL = { ollama: "Ollama (local)", anthropic: "Claude", openai: 
 const state = { user: null, settings: null, date: todayISO() };
 const view = document.getElementById("view");
 
+// Running inside the Matkoll iPhone app? Its native features are reached through Capacitor's bridge.
+const NATIVE = window.Capacitor?.isNativePlatform?.() ? window.Capacitor : null;
+const native = (method, options = {}) => NATIVE.nativePromise("MatkollNative", method, options);
+
 // ---------------------------------------------------------------- small utilities
 
 function esc(s) {
@@ -266,6 +270,40 @@ async function renderToday() {
     } catch (e) { fail(e); }
   });
   view.replaceChildren(root);
+  syncHealth(date, diary.totals);
+}
+
+// ---------------------------------------------------------------- Apple Health (iPhone app only)
+
+const healthKey = () => `matkoll.health.${location.host}.${state.user?.id}`;
+function healthEnabled() {
+  try { return !!NATIVE && localStorage.getItem(healthKey()) === "1"; } catch { return false; }
+}
+
+/** Saves a day's totals to Apple Health. Skips the write when nothing changed since last time. */
+async function syncHealth(date, totals, force = false) {
+  if (!healthEnabled()) return;
+  const sig = JSON.stringify([totals.kcal, totals.protein, totals.carbs, totals.fat, totals.fiber]);
+  const cacheKey = `${healthKey()}.${date}`;
+  try { if (!force && localStorage.getItem(cacheKey) === sig) return; } catch { /* ignore */ }
+  try {
+    await native("healthSaveDay", { date, user: `${location.host}-${state.user.id}`, ...totals });
+    try { localStorage.setItem(cacheKey, sig); } catch { /* ignore */ }
+  } catch (e) {
+    if (e?.code === "denied") toast(e.message, true);
+  }
+}
+
+async function enableHealth() {
+  const res = await native("healthRequest");
+  if (!res?.allowed) throw new Error("Apple Health access wasn't allowed. You can turn it on in the Health app → Sharing → Apps → Matkoll.");
+  localStorage.setItem(healthKey(), "1");
+  // Fill in the last week so Health isn't empty.
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(todayISO(), -i);
+    const diary = await api(`/api/diary?date=${d}`);
+    await syncHealth(d, diary.totals, true);
+  }
 }
 
 function editEntry(e, date) {
@@ -506,11 +544,12 @@ async function makeDetector() {
 }
 
 function scanPanel(sheet, opts, panel) {
-  const live = window.isSecureContext && navigator.mediaDevices?.getUserMedia;
+  const live = !NATIVE && window.isSecureContext && navigator.mediaDevices?.getUserMedia;
   panel.append(el(`<div>
-    ${live ? '<div class="scanner"><video playsinline muted></video><div class="aim"></div></div><p class="hint" data-status>Point the camera at the barcode.</p>'
+    ${NATIVE ? `<button class="btn block" data-native-scan>${ICON.barcode} Open the scanner</button>`
+      : live ? '<div class="scanner"><video playsinline muted></video><div class="aim"></div></div><p class="hint" data-status>Point the camera at the barcode.</p>'
       : `<div class="callout">The live scanner needs the app to be opened over HTTPS. You can still take a photo of the barcode.</div>`}
-    <label class="btn ghost block" style="margin-top:10px">${ICON.camera} Take a photo of the barcode
+    <label class="btn ghost block${NATIVE ? " hidden" : ""}" style="margin-top:10px">${ICON.camera} Take a photo of the barcode
       <input type="file" accept="image/*" capture="environment" class="hidden"></label>
     <form class="row" style="margin-top:12px">
       <input inputmode="numeric" placeholder="Or type the number" aria-label="Barcode number" pattern="[0-9 ]{6,16}">
@@ -552,6 +591,18 @@ function scanPanel(sheet, opts, panel) {
     } catch (err) { fail(err); }
   };
 
+  if (NATIVE) {
+    const openScanner = async () => {
+      try {
+        const res = await native("scanBarcode");
+        if (res?.code) onCode(res.code.replace(/\D/g, "") || res.code);
+      } catch (e) {
+        if (e?.code !== "cancelled") toast(e?.message || "The scanner couldn't start", true);
+      }
+    };
+    $("[data-native-scan]", panel).onclick = openScanner;
+    openScanner();
+  }
   if (live) startLiveScan(sheet, panel, onCode);
 }
 
@@ -960,6 +1011,15 @@ async function renderSettings() {
       <label class="field"><span>New password</span><input name="new_password" type="password" autocomplete="new-password" minlength="6" required></label>
       <button class="btn" type="submit">Change password</button>
     </form>
+    ${NATIVE ? `<section class="section" data-native-settings>
+      <h2>iPhone app</h2>
+      <label class="row" style="justify-content:space-between;margin:12px 0">
+        <span>Save to Apple Health<br><span class="small muted">Your daily calories, protein, carbs, fat and fibre</span></span>
+        <input type="checkbox" data-health style="flex:0;width:26px;min-height:26px">
+      </label>
+      <p class="small muted">Connected to ${esc(location.host)}.</p>
+      <button class="btn ghost" data-change-server>Change server</button>
+    </section>` : ""}
     <button class="btn danger block" data-logout>Sign out</button>
   </div>`);
 
@@ -973,6 +1033,22 @@ async function renderSettings() {
     try { await api("/api/me", { method: "PUT", body: Object.fromEntries(new FormData(e.target)) }); e.target.reset(); toast("Password changed"); }
     catch (err) { fail(err); }
   };
+  const healthBox = $("[data-health]", root);
+  if (healthBox) {
+    healthBox.checked = healthEnabled();
+    healthBox.onchange = async () => {
+      if (healthBox.checked) {
+        healthBox.disabled = true;
+        try { await enableHealth(); toast("Saving to Apple Health"); }
+        catch (e) { healthBox.checked = false; fail(e); }
+        finally { healthBox.disabled = false; }
+      } else {
+        try { localStorage.removeItem(healthKey()); } catch { /* ignore */ }
+        toast("Stopped saving to Apple Health. What's already there stays.");
+      }
+    };
+    $("[data-change-server]", root).onclick = () => { location.href = "capacitor://localhost/index.html?setup=1"; };
+  }
   $("[data-logout]", root).onclick = async () => { await api("/api/auth/logout", { method: "POST" }); state.user = null; renderAuth(false); };
 
   const slvEl = $("[data-slv]", root);

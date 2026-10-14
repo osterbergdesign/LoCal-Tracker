@@ -21,6 +21,10 @@ Open `http://<server>:8080`, create the first account (it becomes the admin), an
 
 The Swedish food database downloads in the background on first start; progress shows under **You → Food databases**.
 
+## iPhone app
+
+`ios-app/` holds a native iPhone app around your server, with Apple's barcode scanner and Apple Health sync. Building it needs a Mac with Xcode; see [ios-app/README.md](ios-app/README.md).
+
 ## Proxmox LXC
 
 Paste this into the shell of your Proxmox VE host (node → **Shell**):
@@ -152,6 +156,8 @@ app/db.py        SQLite schema and helpers
 app/sources.py   Open Food Facts, USDA, Livsmedelsverket
 app/ai.py        photo estimation via Ollama, Claude or OpenAI
 app/static/      the web app (plain JS, no build step)
+lxc/             Proxmox helper script and the installer it runs
+ios-app/         iPhone app (Capacitor): setup screen, native scanner, Apple Health
 ```
 
 ## Data sources and licences

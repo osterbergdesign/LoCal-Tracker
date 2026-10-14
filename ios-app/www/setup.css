@@ -1,0 +1,37 @@
+:root {
+  --paper: #F2F4F3; --surface: #FFFFFF; --ink: #18213A; --ink-2: #4A536B; --ink-3: #8790A6;
+  --line: #DDE1E6; --enamel: #2443B0; --enamel-soft: #E3E8F8; --over: #C2283B;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #0F1424; --surface: #182036; --ink: #EEF1F8; --ink-2: #B4BCD0; --ink-3: #7C86A0;
+    --line: #2A3450; --enamel: #7F9BFF; --enamel-soft: #22305C; --over: #FF6B7D;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--paper); color: var(--ink);
+  font: 16px/1.45 system-ui, -apple-system, sans-serif;
+  padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom);
+}
+main { max-width: 420px; margin: 12vh auto 0; }
+.mark { width: 72px; height: 72px; }
+h1 { font-size: 26px; line-height: 1.15; margin: 18px 0 8px; }
+.muted { color: var(--ink-2); }
+label { display: block; font-size: 14px; color: var(--ink-2); margin: 18px 0 4px; }
+input {
+  width: 100%; min-height: 48px; padding: 11px 12px; font: inherit; color: inherit;
+  border: 1.5px solid var(--line); border-radius: 8px; background: var(--surface);
+}
+input:focus { outline: none; border-color: var(--enamel); }
+.hint { font-size: 14px; color: var(--ink-3); margin: 6px 0 0; }
+.error { color: var(--over); font-size: 15px; }
+button {
+  appearance: none; border: 0; width: 100%; min-height: 48px; margin-top: 16px; border-radius: 999px;
+  background: var(--enamel); color: #fff; font: inherit; font-weight: 600;
+}
+@media (prefers-color-scheme: dark) { button { color: #0F1424; } }
+button.ghost { background: var(--enamel-soft); color: var(--enamel); margin-top: 10px; }
+.hidden { display: none !important; }
