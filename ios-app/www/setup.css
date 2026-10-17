@@ -1,37 +1,35 @@
+/* First-run "connect to your server" screen of the iPhone app - same dark look as the app itself. */
+@font-face { font-family: "Poppins"; font-weight: 400; font-display: swap; src: url("fonts/poppins-400.woff") format("woff"); }
+@font-face { font-family: "Poppins"; font-weight: 500; font-display: swap; src: url("fonts/poppins-500.woff") format("woff"); }
+@font-face { font-family: "Poppins"; font-weight: 600; font-display: swap; src: url("fonts/poppins-600.woff") format("woff"); }
 :root {
-  --paper: #F2F4F3; --surface: #FFFFFF; --ink: #18213A; --ink-2: #4A536B; --ink-3: #8790A6;
-  --line: #DDE1E6; --enamel: #2443B0; --enamel-soft: #E3E8F8; --over: #C2283B;
-  color-scheme: light dark;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --paper: #0F1424; --surface: #182036; --ink: #EEF1F8; --ink-2: #B4BCD0; --ink-3: #7C86A0;
-    --line: #2A3450; --enamel: #7F9BFF; --enamel-soft: #22305C; --over: #FF6B7D;
-  }
+  --paper: #0D0F10; --surface: #1E2022; --tile: #141414; --ink: #FFFFFF; --ink-2: #D1D2D1; --ink-3: #7D8083;
+  --enamel: #38F2E9; --enamel-soft: rgba(56, 242, 233, .14); --on-accent: #0D0F10; --over: #FF8A80;
+  color-scheme: dark;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body {
   background: var(--paper); color: var(--ink);
-  font: 16px/1.45 system-ui, -apple-system, sans-serif;
+  font: 15px/1.45 "Poppins", system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased;
   padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom);
 }
 main { max-width: 420px; margin: 12vh auto 0; }
-.mark { width: 72px; height: 72px; }
-h1 { font-size: 26px; line-height: 1.15; margin: 18px 0 8px; }
-.muted { color: var(--ink-2); }
-label { display: block; font-size: 14px; color: var(--ink-2); margin: 18px 0 4px; }
+.mark { width: 72px; height: 72px; border-radius: 20px; }
+h1 { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; line-height: 1.15; margin: 20px 0 8px; }
+.muted { color: var(--ink-3); }
+label { display: block; font-size: 13px; color: var(--ink-3); margin: 20px 0 6px; }
 input {
-  width: 100%; min-height: 48px; padding: 11px 12px; font: inherit; color: inherit;
-  border: 1.5px solid var(--line); border-radius: 8px; background: var(--surface);
+  width: 100%; min-height: 48px; padding: 11px 14px; font: inherit; color: inherit;
+  border: 1.5px solid transparent; border-radius: 14px; background: var(--tile);
 }
+input::placeholder { color: var(--ink-3); }
 input:focus { outline: none; border-color: var(--enamel); }
-.hint { font-size: 14px; color: var(--ink-3); margin: 6px 0 0; }
-.error { color: var(--over); font-size: 15px; }
+.hint { font-size: 13px; color: var(--ink-3); margin: 8px 0 0; }
+.error { color: var(--over); font-size: 14px; }
 button {
-  appearance: none; border: 0; width: 100%; min-height: 48px; margin-top: 16px; border-radius: 999px;
-  background: var(--enamel); color: #fff; font: inherit; font-weight: 600;
+  appearance: none; border: 0; width: 100%; min-height: 48px; margin-top: 18px; border-radius: 999px;
+  background: var(--enamel); color: var(--on-accent); font: inherit; font-weight: 600;
 }
-@media (prefers-color-scheme: dark) { button { color: #0F1424; } }
 button.ghost { background: var(--enamel-soft); color: var(--enamel); margin-top: 10px; }
 .hidden { display: none !important; }

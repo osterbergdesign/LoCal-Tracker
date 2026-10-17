@@ -138,6 +138,12 @@ const ICON = {
   camera: '<svg class="i" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
   copy: '<svg class="i" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>',
 };
+const MEAL_ICON = {
+  breakfast: '<svg class="i" viewBox="0 0 24 24"><path d="M5 10h11v4a5 5 0 0 1-5 5h-1a5 5 0 0 1-5-5z"/><path d="M16 11h1.5a2.5 2.5 0 0 1 0 5H16"/><path d="M9 3c-1 1.2 1 2.3 0 3.5M12.5 3c-1 1.2 1 2.3 0 3.5"/></svg>',
+  lunch: '<svg class="i" viewBox="0 0 24 24"><path d="M3 12h18a9 9 0 0 1-18 0z"/><path d="M8 8c0-2 1.5-3 4-3s4 1 4 3"/><path d="M12 5V3"/></svg>',
+  dinner: '<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5.5"/><path d="M3 4v5a2 2 0 0 0 2 2v9M5 4v4M21 4c-1.5 1-2 3-2 5v2h2v9"/></svg>',
+  snack: '<svg class="i" viewBox="0 0 24 24"><path d="M12 7c-1-2.5-4.5-3-6.5-1S3.5 12 6 16s5 5 6 4c1 1 3.5 0 6-4s2.5-8 .5-10S13 4.5 12 7z"/><path d="M12 7c0-2 1-3.5 2.5-4"/></svg>',
+};
 
 async function api(path, { method = "GET", body, form } = {}) {
   if (HA_MODE) return haRequest(path, { method, body, form });
@@ -259,6 +265,7 @@ async function renderToday() {
       </div>
       ${date !== todayISO() ? '<button class="btn plain" data-today>Back to today</button>' : ""}
     </div>
+    <section class="hero">
     <div class="plate-wrap">
       <svg class="plate" viewBox="0 0 240 240" aria-hidden="true">
         <circle class="rim" cx="120" cy="120" r="114"/>
@@ -279,6 +286,7 @@ async function renderToday() {
         <div class="bar"><i style="width:${Math.min(100, (t[k] / (g[k] || 1)) * 100)}%"></i></div>
         <div class="val num">${r0(t[k])} of ${r0(g[k])} g</div></div>`).join("")}
     </div>
+    </section>
     ${planned.length ? `<div class="callout row" style="justify-content:space-between">
         <span>${planned.length} planned item${planned.length > 1 ? "s" : ""} for ${esc(fmtDay(date).toLowerCase())}</span>
         <button class="btn ghost" style="flex:0" data-logplan>Log plan</button></div>` : ""}
@@ -286,17 +294,21 @@ async function renderToday() {
     <div class="row" style="justify-content:center">
       <button class="btn plain" style="flex:0" data-copy>${ICON.copy} Copy the day before</button>
     </div>
-    <div class="week" aria-label="Last 7 days"></div>
+    <section class="week-card">
+      <div class="card-head"><h2>Last 7 days</h2><span class="muted num" data-avg></span></div>
+      <div class="week" aria-label="Last 7 days"></div>
+    </section>
   </div>`);
 
   const meals = $("[data-meals]", root);
   for (const m of MEALS) {
     const md = diary.meals[m];
-    const sec = el(`<section class="meal" aria-label="${MEAL_LABEL[m]}">
-      <div class="meal-head"><div><h2 style="display:inline">${MEAL_LABEL[m]}</h2>
-        <span class="kc num">${md.entries.length ? fmt(md.totals.kcal) + " kcal" : ""}</span></div>
+    const n = md.entries.length;
+    const sec = el(`<section class="meal${n ? " has" : ""}" aria-label="${MEAL_LABEL[m]}">
+      <div class="meal-head"><div><span class="meal-ic" aria-hidden="true">${MEAL_ICON[m]}</span>
+        <div><h2>${MEAL_LABEL[m]}</h2>
+        <div class="kc num">${n ? `${fmt(md.totals.kcal)} kcal · ${n} item${n === 1 ? "" : "s"}` : "Nothing logged yet"}</div></div></div>
         <button class="icon-btn" aria-label="Add to ${MEAL_LABEL[m]}">${ICON.plus}</button></div>
-      ${md.entries.length ? "" : '<div class="empty">Nothing logged yet</div>'}
     </section>`);
     $(".meal-head button", sec).onclick = () => openAdd({ date, meal: m, mode: "diary" });
     for (const e of md.entries) {
@@ -312,6 +324,8 @@ async function renderToday() {
 
   // Week strip
   const week = $(".week", root);
+  const logged = hist.days.filter((d) => d.kcal > 0);
+  if (logged.length) $("[data-avg]", root).textContent = `${fmt(logged.reduce((a, d) => a + d.kcal, 0) / logged.length)} kcal a day on average`;
   const max = Math.max(hist.goal * 1.25, ...hist.days.map((d) => d.kcal), 1);
   week.append(el(`<div class="goal" style="bottom:${(hist.goal / max) * 70 + 20}px" title="Goal"></div>`));
   for (const d of hist.days) {
