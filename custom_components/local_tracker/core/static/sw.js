@@ -1,6 +1,7 @@
 // Caches the app shell so it opens instantly; API calls always go to the server.
-const CACHE = "local-tracker-v2";
-const SHELL = ["/", "/static/app.css", "/static/app.js", "/static/icon.svg", "/static/manifest.webmanifest"];
+const CACHE = "local-tracker-v3";
+const SHELL = ["/", "/static/app.css", "/static/app.js", "/static/icon.svg", "/static/manifest.webmanifest",
+  "/static/fonts/poppins-300.woff", "/static/fonts/poppins-400.woff", "/static/fonts/poppins-500.woff", "/static/fonts/poppins-600.woff"];
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

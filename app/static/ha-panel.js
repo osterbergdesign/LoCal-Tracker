@@ -48,7 +48,7 @@ class LoCalPanel extends HTMLElement {
     this._frame = this.shadowRoot.querySelector("iframe");
     this.shadowRoot.querySelector("button").addEventListener("click", () =>
       this.dispatchEvent(new Event("hass-toggle-menu", { bubbles: true, composed: true })));
-    this._frame.addEventListener("load", () => this._push());
+    this._frame.addEventListener("load", () => { this._flag(); this._push(); });
     this._frame.src = `/local_tracker_static/ha.html?ha=1&v=${encodeURIComponent(VERSION)}`;
   }
 
@@ -59,10 +59,18 @@ class LoCalPanel extends HTMLElement {
 
   set narrow(narrow) {
     this.toggleAttribute("narrow", !!narrow);
+    this._flag();
   }
 
   set panel(panel) {
     this._panel = panel;
+  }
+
+  // On phones the panel draws its own header (which already clears the notch), so the app skips its top inset.
+  _flag() {
+    try {
+      this._frame?.contentDocument?.documentElement?.toggleAttribute("data-below-bar", this.hasAttribute("narrow"));
+    } catch { /* not loaded yet */ }
   }
 
   _push() {
